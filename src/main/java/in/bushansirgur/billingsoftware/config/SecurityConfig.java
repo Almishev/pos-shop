@@ -37,6 +37,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/login","encode").permitAll()
+                    // allow static uploads to be served without authentication
+                    .requestMatchers("/uploads/**", "/api/v1.0/uploads/**").permitAll()
                     .requestMatchers("/category", "/items").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated()
