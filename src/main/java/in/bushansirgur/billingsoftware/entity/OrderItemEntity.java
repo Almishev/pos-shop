@@ -20,6 +20,7 @@ public class OrderItemEntity {
     private Long id;
     private String itemId;
     private String name;
+    private String barcode;
     private Double price;
     private Integer quantity;
 }

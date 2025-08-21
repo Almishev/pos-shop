@@ -31,6 +31,7 @@ public class OrderResponse {
     public static class OrderItemResponse {
         private String itemId;
         private String name;
+        private String barcode;
         private Double price;
         private Integer quantity;
     }

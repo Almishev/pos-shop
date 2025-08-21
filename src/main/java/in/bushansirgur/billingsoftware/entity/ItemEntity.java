@@ -35,6 +35,9 @@ public class ItemEntity {
 
     private String description;
 
+    @Column(unique = true)
+    private String barcode;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Timestamp createdAt;

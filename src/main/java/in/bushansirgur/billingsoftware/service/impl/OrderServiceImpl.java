@@ -42,6 +42,7 @@ public class OrderServiceImpl implements OrderService {
         return OrderItemEntity.builder()
                 .itemId(orderItemRequest.getItemId())
                 .name(orderItemRequest.getName())
+                .barcode(orderItemRequest.getBarcode())
                 .price(orderItemRequest.getPrice())
                 .quantity(orderItemRequest.getQuantity())
                 .build();
@@ -69,6 +70,7 @@ public class OrderServiceImpl implements OrderService {
         return OrderResponse.OrderItemResponse.builder()
                 .itemId(orderItemEntity.getItemId())
                 .name(orderItemEntity.getName())
+                .barcode(orderItemEntity.getBarcode())
                 .price(orderItemEntity.getPrice())
                 .quantity(orderItemEntity.getQuantity())
                 .build();

@@ -13,5 +13,9 @@ public interface ItemService {
 
     List<ItemResponse> fetchItems();
 
+    ItemResponse findItemByBarcode(String barcode);
+
+    List<ItemResponse> searchItems(String searchTerm);
+
     void deleteItem(String itemId);
 }

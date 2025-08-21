@@ -33,6 +33,14 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     public ItemResponse add(ItemRequest request, MultipartFile file) throws IOException {
+        // Check if barcode already exists
+        if (request.getBarcode() != null && !request.getBarcode().trim().isEmpty()) {
+            itemRepository.findByBarcode(request.getBarcode())
+                    .ifPresent(item -> {
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Item with barcode " + request.getBarcode() + " already exists");
+                    });
+        }
+        
         //String imgUrl = fileUploadService.uploadFile(file);
         String fileName = UUID.randomUUID().toString()+"."+ StringUtils.getFilenameExtension(file.getOriginalFilename());
         Path uploadPath = Paths.get("uploads").toAbsolutePath().normalize();
@@ -55,6 +63,7 @@ public class ItemServiceImpl implements ItemService {
                 .name(newItem.getName())
                 .description(newItem.getDescription())
                 .price(newItem.getPrice())
+                .barcode(newItem.getBarcode())
                 .imgUrl(newItem.getImgUrl())
                 .categoryName(newItem.getCategory().getName())
                 .categoryId(newItem.getCategory().getCategoryId())
@@ -64,11 +73,18 @@ public class ItemServiceImpl implements ItemService {
     }
 
     private ItemEntity convertToEntity(ItemRequest request) {
+        String barcode = request.getBarcode();
+        if (barcode == null || barcode.trim().isEmpty()) {
+            // Generate a unique barcode if none provided
+            barcode = "BC" + System.currentTimeMillis() + String.valueOf((int)(Math.random() * 1000));
+        }
+        
         return ItemEntity.builder()
                 .itemId(UUID.randomUUID().toString())
                 .name(request.getName())
                 .description(request.getDescription())
                 .price(request.getPrice())
+                .barcode(barcode)
                 .build();
     }
 
@@ -77,6 +93,21 @@ public class ItemServiceImpl implements ItemService {
         return itemRepository.findAll()
                 .stream()
                 .map(itemEntity -> convertToResponse(itemEntity))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public ItemResponse findItemByBarcode(String barcode) {
+        ItemEntity item = itemRepository.findByBarcode(barcode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found with barcode: " + barcode));
+        return convertToResponse(item);
+    }
+
+    @Override
+    public List<ItemResponse> searchItems(String searchTerm) {
+        return itemRepository.findByNameContainingOrBarcodeContaining(searchTerm)
+                .stream()
+                .map(this::convertToResponse)
                 .collect(Collectors.toList());
     }
 

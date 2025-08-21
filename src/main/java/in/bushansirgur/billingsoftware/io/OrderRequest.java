@@ -28,6 +28,7 @@ public class OrderRequest {
     public static class OrderItemRequest {
         private String itemId;
         private String name;
+        private String barcode;
         private Double price;
         private Integer quantity;
     }
