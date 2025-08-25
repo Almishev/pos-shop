@@ -39,7 +39,7 @@ public class SecurityConfig {
                     .requestMatchers("/login","encode").permitAll()
                     // allow static uploads to be served without authentication
                     .requestMatchers("/uploads/**", "/api/v1.0/uploads/**").permitAll()
-                    .requestMatchers("/category", "/items", "/items/generate-barcode", "/items/barcode/**", "/items/search").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/category", "/items", "/items/generate-barcode", "/items/barcode/**", "/items/search", "/fiscal/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/admin/**").hasRole("ADMIN")
                     .anyRequest().authenticated()
                 )
