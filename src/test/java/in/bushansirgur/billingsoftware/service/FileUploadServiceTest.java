@@ -29,7 +29,7 @@ class FileUploadServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Подготовка на mock данни
+        
         when(multipartFile.getOriginalFilename()).thenReturn("test-image.jpg");
         when(multipartFile.getContentType()).thenReturn("image/jpeg");
     }
@@ -37,17 +37,16 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should handle file with no extension")
     void uploadFile_ShouldHandleFileWithNoExtension() {
-        // Arrange
+       
         when(multipartFile.getOriginalFilename()).thenReturn("test-image");
         when(multipartFile.getContentType()).thenReturn("image/jpeg");
         try {
             when(multipartFile.getBytes()).thenReturn("test content".getBytes());
         } catch (IOException e) {
-            // Mock will handle this
+           
         }
         when(multipartFile.isEmpty()).thenReturn(false);
 
-        // Act & Assert - трябва да хвърли exception защото S3Client не е mock-нат
         assertThrows(Exception.class, () -> {
             fileUploadService.uploadFile(multipartFile);
         });
@@ -56,17 +55,16 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should handle file with null original filename")
     void uploadFile_ShouldHandleFileWithNullOriginalFilename() {
-        // Arrange
+        
         when(multipartFile.getOriginalFilename()).thenReturn(null);
         when(multipartFile.getContentType()).thenReturn("image/png");
         try {
             when(multipartFile.getBytes()).thenReturn("test content".getBytes());
         } catch (IOException e) {
-            // Mock will handle this
+          
         }
         when(multipartFile.isEmpty()).thenReturn(false);
 
-        // Act & Assert - трябва да хвърли exception защото S3Client не е mock-нат
         assertThrows(Exception.class, () -> {
             fileUploadService.uploadFile(multipartFile);
         });
@@ -75,10 +73,9 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should successfully delete file")
     void deleteFile_ShouldDeleteFile_Successfully() {
-        // Arrange
+        
         String imgUrl = "https://example.com/test-image.jpg";
 
-        // Act & Assert - трябва да хвърли exception защото S3Client не е mock-нат
         assertThrows(Exception.class, () -> {
             fileUploadService.deleteFile(imgUrl);
         });
@@ -87,7 +84,6 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should handle null imgUrl in delete")
     void deleteFile_ShouldHandleNullImgUrl() {
-        // Act & Assert - трябва да хвърли exception защото S3Client не е mock-нат
         assertThrows(Exception.class, () -> {
             fileUploadService.deleteFile(null);
         });
@@ -96,7 +92,6 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should handle empty imgUrl in delete")
     void deleteFile_ShouldHandleEmptyImgUrl() {
-        // Act & Assert - трябва да хвърли exception защото S3Client не е mock-нат
         assertThrows(Exception.class, () -> {
             fileUploadService.deleteFile("");
         });
@@ -105,7 +100,7 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should handle invalid imgUrl in delete")
     void deleteFile_ShouldHandleInvalidImgUrl() {
-        // Act & Assert - трябва да хвърли exception защото S3Client не е mock-нат
+    
         assertThrows(Exception.class, () -> {
             fileUploadService.deleteFile("invalid-url");
         });

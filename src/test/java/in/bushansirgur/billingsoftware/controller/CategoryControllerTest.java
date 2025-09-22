@@ -47,7 +47,6 @@ class CategoryControllerTest {
 
     @BeforeEach
     void setUp() {
-        // Подготовка на тестови данни
         categoryRequest = CategoryRequest.builder()
                 .name("Test Electronics")
                 .description("Test electronic devices")
@@ -77,7 +76,7 @@ class CategoryControllerTest {
     @Test
     @DisplayName("Should create category successfully")
     void shouldCreateCategorySuccessfully() throws Exception {
-        // Arrange
+      
         when(categoryService.add(any(CategoryRequest.class), any(MultipartFile.class)))
                 .thenReturn(categoryResponse);
 

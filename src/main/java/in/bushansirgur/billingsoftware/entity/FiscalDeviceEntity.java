@@ -20,28 +20,28 @@ public class FiscalDeviceEntity {
     private Long id;
     
     @Column(unique = true)
-    private String serialNumber; // Сериен номер на ФУ
+    private String serialNumber;
     
-    private String manufacturer; // Производител
+    private String manufacturer;
     
-    private String model; // Модел
+    private String model;
     
-    private String fiscalMemoryNumber; // Номер на фискалната памет
+    private String fiscalMemoryNumber; 
     
-    private LocalDateTime registrationDate; // Дата на регистрация
+    private LocalDateTime registrationDate; 
     
-    private LocalDateTime lastMaintenanceDate; // Последно обслужване
+    private LocalDateTime lastMaintenanceDate; 
     
-    private String apiEndpoint; // API endpoint за комуникация
+    private String apiEndpoint; 
     
-    private String apiKey; // API ключ за достъп
+    private String apiKey; 
     
     @Enumerated(EnumType.STRING)
-    private DeviceStatus status; // Статус на устройството
+    private DeviceStatus status; 
     
-    private String location; // Локация на устройството
+    private String location; 
     
-    private String notes; // Бележки
+    private String notes;
     
     @PrePersist
     protected void onCreate() {
@@ -52,10 +52,10 @@ public class FiscalDeviceEntity {
     }
     
     public enum DeviceStatus {
-        ACTIVE,     // Активно
-        INACTIVE,   // Неактивно
-        MAINTENANCE, // В обслужване
-        ERROR,      // Грешка
-        DISCONNECTED // Изключено
+        ACTIVE,     
+        INACTIVE,   
+        MAINTENANCE, 
+        ERROR,      
+        DISCONNECTED
     }
 }

@@ -21,28 +21,28 @@ public class FiscalReceiptEntity {
     private Long id;
     
     @Column(unique = true)
-    private String fiscalNumber; // Фискален номер от ФУ
+    private String fiscalNumber; 
     
-    private String orderId; // Свързване с поръчката
+    private String orderId; 
     
-    private String deviceSerialNumber; // Сериен номер на ФУ
+    private String deviceSerialNumber; 
     
-    private LocalDateTime fiscalDateTime; // Време на фискализация
+    private LocalDateTime fiscalDateTime; 
     
-    private BigDecimal subtotal; // Междинна сума
+    private BigDecimal subtotal; 
     
-    private BigDecimal vatAmount; // ДДС сума
+    private BigDecimal vatAmount; 
     
-    private BigDecimal grandTotal; // Крайна сума
+    private BigDecimal grandTotal;
     
-    private String qrCode; // QR код за проверка
+    private String qrCode; 
     
-    private String fiscalUrl; // URL за проверка в НАП
+    private String fiscalUrl; 
     
     @Enumerated(EnumType.STRING)
-    private FiscalStatus status; // Статус на фискализацията
+    private FiscalStatus status; 
     
-    private String errorMessage; // Грешка ако има такава
+    private String errorMessage; 
     
     @PrePersist
     protected void onCreate() {
@@ -53,10 +53,10 @@ public class FiscalReceiptEntity {
     }
     
     public enum FiscalStatus {
-        PENDING,    // Чакащ
-        SENT,       // Изпратен към ФУ
-        CONFIRMED,  // Потвърден от ФУ
-        ERROR,      // Грешка
-        CANCELLED   // Анулиран
+        PENDING,    
+        SENT,       
+        CONFIRMED,  
+        ERROR,   
+        CANCELLED   
     }
 }

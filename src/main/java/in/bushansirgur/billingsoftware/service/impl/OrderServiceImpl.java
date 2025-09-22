@@ -4,6 +4,7 @@ import in.bushansirgur.billingsoftware.entity.OrderEntity;
 import in.bushansirgur.billingsoftware.entity.OrderItemEntity;
 import in.bushansirgur.billingsoftware.io.*;
 import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
+import in.bushansirgur.billingsoftware.service.InventoryService;
 import in.bushansirgur.billingsoftware.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl implements OrderService {
     
     private final OrderEntityRepository orderEntityRepository; 
+    private final InventoryService inventoryService;
 
     @Override
     public OrderResponse createOrder(OrderRequest request) {
@@ -35,6 +37,18 @@ public class OrderServiceImpl implements OrderService {
         newOrder.setItems(orderItems);
         
         newOrder = orderEntityRepository.save(newOrder);
+
+        // Decrease inventory quantities based on items in the order
+        try {
+            for (OrderRequest.OrderItemRequest itemReq : request.getCartItems()) {
+                inventoryService.processSaleTransaction(itemReq.getItemId(), itemReq.getQuantity(), newOrder.getOrderId());
+            }
+        } catch (Exception ex) {
+            // Swallow inventory error to not block order creation, but log it
+            // In production, replace with proper logger
+            System.err.println("Inventory update failed for order " + newOrder.getOrderId() + ": " + ex.getMessage());
+        }
+
         return convertToResponse(newOrder);
     }
 

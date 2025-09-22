@@ -37,10 +37,21 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/login","encode").permitAll()
-                    // allow static uploads to be served without authentication
                     .requestMatchers("/uploads/**", "/api/v1.0/uploads/**").permitAll()
-                    .requestMatchers("/category", "/items", "/items/generate-barcode", "/items/barcode/**", "/items/search", "/fiscal/**").hasAnyRole("USER", "ADMIN")
-                    .requestMatchers("/admin/**").hasRole("ADMIN")
+                    // Allow authenticated users (USER, ADMIN) to access common app resources
+                    .requestMatchers(
+                            "/categories",
+                            "/category",
+                            "/items",
+                            "/items/**",
+                            "/items/generate-barcode",
+                            "/items/barcode/**",
+                            "/items/search",
+                            "/fiscal/**"
+                    ).hasAnyRole("USER", "ADMIN")
+                    // Admin-only endpoints (full inventory UI/APIs), but allow auto inventory ops for USER too
+                    .requestMatchers("/admin/**", "/inventory", "/inventory/**").hasRole("ADMIN")
+                    .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

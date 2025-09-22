@@ -48,6 +48,14 @@ public class ItemServiceImpl implements ItemService {
     }
 
     private ItemResponse convertToResponse(ItemEntity newItem) {
+        // Determine stock status
+        String stockStatus = determineStockStatus(newItem);
+        Boolean needsReorder = newItem.getStockQuantity() != null && 
+                              newItem.getReorderPoint() != null && 
+                              newItem.getStockQuantity() <= newItem.getReorderPoint();
+        Integer reorderQuantity = needsReorder && newItem.getMaxStockLevel() != null ? 
+            newItem.getMaxStockLevel() - newItem.getStockQuantity() : 0;
+        
         return ItemResponse.builder()
                 .itemId(newItem.getItemId())
                 .name(newItem.getName())
@@ -59,7 +67,32 @@ public class ItemServiceImpl implements ItemService {
                 .categoryId(newItem.getCategory().getCategoryId())
                 .createdAt(newItem.getCreatedAt())
                 .updatedAt(newItem.getUpdatedAt())
+                .stockQuantity(newItem.getStockQuantity())
+                .minStockLevel(newItem.getMinStockLevel())
+                .maxStockLevel(newItem.getMaxStockLevel())
+                .reorderPoint(newItem.getReorderPoint())
+                .unitOfMeasure(newItem.getUnitOfMeasure())
+                .supplierName(newItem.getSupplierName())
+                .supplierCode(newItem.getSupplierCode())
+                .costPrice(newItem.getCostPrice())
+                .lastRestockDate(newItem.getLastRestockDate())
+                .lastStockCheck(newItem.getLastStockCheck())
+                .stockStatus(stockStatus)
+                .needsReorder(needsReorder)
+                .reorderQuantity(reorderQuantity)
                 .build();
+    }
+    
+    private String determineStockStatus(ItemEntity item) {
+        if (item.getStockQuantity() == null || item.getStockQuantity() <= 0) {
+            return "OUT_OF_STOCK";
+        } else if (item.getReorderPoint() != null && item.getStockQuantity() <= item.getReorderPoint()) {
+            return "LOW_STOCK";
+        } else if (item.getMaxStockLevel() != null && item.getStockQuantity() > item.getMaxStockLevel()) {
+            return "OVERSTOCK";
+        } else {
+            return "NORMAL";
+        }
     }
 
     private ItemEntity convertToEntity(ItemRequest request) {

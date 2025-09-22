@@ -31,6 +31,6 @@ public class FiscalReceiptRequest {
         private BigDecimal unitPrice;
         private Integer quantity;
         private BigDecimal totalPrice;
-        private BigDecimal vatRate; // 20% за България
+        private BigDecimal vatRate; 
     }
 }

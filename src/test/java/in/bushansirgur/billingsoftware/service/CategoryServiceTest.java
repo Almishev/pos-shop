@@ -51,7 +51,6 @@ class CategoryServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Подготовка на тестови данни
         categoryRequest = CategoryRequest.builder()
                 .name("Electronics")
                 .description("Electronic devices and gadgets")
@@ -85,7 +84,7 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should successfully add a new category")
     void add_ShouldAddNewCategory_Successfully() throws IOException {
-        // Arrange
+        
         when(fileUploadService.uploadFile(any(MultipartFile.class)))
                 .thenReturn("https://example.com/image.jpg");
         when(categoryRepository.save(any(CategoryEntity.class)))
@@ -93,10 +92,8 @@ class CategoryServiceTest {
         when(itemRepository.countByCategoryId(anyLong()))
                 .thenReturn(5);
 
-        // Act
         CategoryResponse result = categoryService.add(categoryRequest, multipartFile);
 
-        // Assert
         assertNotNull(result);
         assertEquals(expectedResponse.getCategoryId(), result.getCategoryId());
         assertEquals(expectedResponse.getName(), result.getName());
@@ -113,11 +110,10 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should throw IOException when file upload fails")
     void add_ShouldThrowIOException_WhenFileUploadFails() throws IOException {
-        // Arrange
+        
         when(fileUploadService.uploadFile(any(MultipartFile.class)))
                 .thenThrow(new RuntimeException("File upload failed"));
 
-        // Act & Assert
         assertThrows(RuntimeException.class, () -> {
             categoryService.add(categoryRequest, multipartFile);
         });
@@ -129,7 +125,7 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should return all categories when reading")
     void read_ShouldReturnAllCategories() {
-        // Arrange
+       
         CategoryEntity categoryEntity2 = CategoryEntity.builder()
                 .id(2L)
                 .categoryId("test-category-id-2")
@@ -146,10 +142,8 @@ class CategoryServiceTest {
         when(itemRepository.countByCategoryId(1L)).thenReturn(5);
         when(itemRepository.countByCategoryId(2L)).thenReturn(3);
 
-        // Act
         List<CategoryResponse> result = categoryService.read();
 
-        // Assert
         assertNotNull(result);
         assertEquals(2, result.size());
         assertEquals("Electronics", result.get(0).getName());
@@ -164,13 +158,11 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should return empty list when no categories exist")
     void read_ShouldReturnEmptyList_WhenNoCategoriesExist() {
-        // Arrange
+        
         when(categoryRepository.findAll()).thenReturn(Arrays.asList());
 
-        // Act
         List<CategoryResponse> result = categoryService.read();
-
-        // Assert
+        
         assertNotNull(result);
         assertTrue(result.isEmpty());
 
@@ -181,15 +173,14 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should successfully delete existing category")
     void delete_ShouldDeleteCategory_Successfully() {
-        // Arrange
+      
         String categoryId = "test-category-id";
         when(categoryRepository.findByCategoryId(categoryId))
                 .thenReturn(Optional.of(categoryEntity));
 
-        // Act
+        
         categoryService.delete(categoryId);
 
-        // Assert
         verify(categoryRepository).findByCategoryId(categoryId);
         verify(fileUploadService).deleteFile(categoryEntity.getImgUrl());
         verify(categoryRepository).delete(categoryEntity);
@@ -198,12 +189,11 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should throw RuntimeException when category not found for deletion")
     void delete_ShouldThrowRuntimeException_WhenCategoryNotFound() {
-        // Arrange
+    
         String categoryId = "non-existent-category-id";
         when(categoryRepository.findByCategoryId(categoryId))
                 .thenReturn(Optional.empty());
 
-        // Act & Assert
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
             categoryService.delete(categoryId);
         });
@@ -218,11 +208,10 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should handle null categoryId in delete method")
     void delete_ShouldHandleNullCategoryId() {
-        // Arrange
+       
         when(categoryRepository.findByCategoryId(null))
                 .thenReturn(Optional.empty());
 
-        // Act & Assert
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
             categoryService.delete(null);
         });
@@ -237,11 +226,10 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should handle empty categoryId in delete method")
     void delete_ShouldHandleEmptyCategoryId() {
-        // Arrange
+       
         when(categoryRepository.findByCategoryId(""))
                 .thenReturn(Optional.empty());
 
-        // Act & Assert
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
             categoryService.delete("");
         });

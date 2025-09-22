@@ -18,7 +18,6 @@ public class FiscalDeviceController {
     
     private final FiscalDeviceService fiscalDeviceService;
     
-    // Фискални устройства
     @GetMapping("/devices")
     public ResponseEntity<List<FiscalDeviceEntity>> getAllDevices() {
         return ResponseEntity.ok(fiscalDeviceService.getAllDevices());
@@ -45,7 +44,6 @@ public class FiscalDeviceController {
         return ResponseEntity.ok().build();
     }
     
-    // Фискални разписки
     @PostMapping("/receipts")
     public ResponseEntity<FiscalReceiptResponse> sendReceiptToFiscalDevice(@RequestBody FiscalReceiptRequest request) {
         return ResponseEntity.ok(fiscalDeviceService.sendReceiptToFiscalDevice(request));
@@ -56,7 +54,6 @@ public class FiscalDeviceController {
         return ResponseEntity.ok(fiscalDeviceService.getReceiptStatus(fiscalNumber));
     }
     
-    // Статус на устройствата
     @GetMapping("/devices/{serialNumber}/status")
     public ResponseEntity<Boolean> isDeviceConnected(@PathVariable String serialNumber) {
         return ResponseEntity.ok(fiscalDeviceService.isDeviceConnected(serialNumber));
@@ -67,7 +64,6 @@ public class FiscalDeviceController {
         return ResponseEntity.ok(fiscalDeviceService.isDeviceReady(serialNumber));
     }
     
-    // Отчети
     @PostMapping("/devices/{serialNumber}/x-report")
     public ResponseEntity<String> generateXReport(@PathVariable String serialNumber) {
         return ResponseEntity.ok(fiscalDeviceService.generateXReport(serialNumber));

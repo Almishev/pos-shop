@@ -75,7 +75,6 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
     
     @Override
     public FiscalReceiptResponse sendReceiptToFiscalDevice(FiscalReceiptRequest request) {
-        // Проверка дали устройството съществува и е активно
         FiscalDeviceEntity device = getDeviceBySerialNumber(request.getDeviceSerialNumber());
         
         if (device.getStatus() != FiscalDeviceEntity.DeviceStatus.ACTIVE) {
@@ -83,12 +82,10 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
                     "Fiscal device is not active: " + request.getDeviceSerialNumber());
         }
         
-        // Симулация на изпращане към фискално устройство
         try {
-            // Генериране на фискален номер (в реалност това идва от ФУ)
+         
             String fiscalNumber = generateFiscalNumber(device);
             
-            // Създаване на фискална разписка
             FiscalReceiptEntity fiscalReceipt = FiscalReceiptEntity.builder()
                     .fiscalNumber(fiscalNumber)
                     .orderId(request.getOrderId())
@@ -109,8 +106,7 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
             
         } catch (Exception e) {
             log.error("Error sending receipt to fiscal device: {}", e.getMessage());
-            
-            // Създаване на запис с грешка
+        
             FiscalReceiptEntity errorReceipt = FiscalReceiptEntity.builder()
                     .orderId(request.getOrderId())
                     .deviceSerialNumber(request.getDeviceSerialNumber())
@@ -150,33 +146,31 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
     
     @Override
     public String generateXReport(String deviceSerialNumber) {
-        // Симулация на X-отчет (междинен отчет)
+    
         log.info("Generating X report for device: {}", deviceSerialNumber);
         return "X_REPORT_" + deviceSerialNumber + "_" + System.currentTimeMillis();
     }
     
     @Override
     public String generateZReport(String deviceSerialNumber) {
-        // Симулация на Z-отчет (краен дневен отчет)
         log.info("Generating Z report for device: {}", deviceSerialNumber);
         return "Z_REPORT_" + deviceSerialNumber + "_" + System.currentTimeMillis();
     }
     
-    // Помощни методи
     private String generateFiscalNumber(FiscalDeviceEntity device) {
-        // Формат: ФУ-сериен номер-дата-пореден номер
+       
         return "FU-" + device.getSerialNumber() + "-" + 
                LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")) + "-" +
                String.format("%06d", (int)(Math.random() * 999999));
     }
     
     private String generateQRCode(String fiscalNumber) {
-        // Симулация на QR код
+
         return "https://qr.nap.bg/check/" + fiscalNumber;
     }
     
     private String generateFiscalUrl(String fiscalNumber) {
-        // URL за проверка в НАП
+
         return "https://fiscal.nap.bg/receipt/" + fiscalNumber;
     }
 }

@@ -6,25 +6,30 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.sql.Timestamp;
+import java.time.LocalDateTime;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class ItemResponse {
-    private String itemId;
-    private String name;
-    private BigDecimal price;
-    private String categoryId;
-    private String description;
-    private String barcode;
-    private String categoryName;
-    private String imgUrl;
-    private Timestamp createdAt;
-    private Timestamp updatedAt;
+public class InventoryResponse {
     
-    private Integer stockQuantity;
+    private String itemId;
+    private String itemName;
+    private String barcode;
+    private Integer currentStock;
+    private Integer previousStock;
+    private Integer newStock;
+    private BigDecimal unitPrice;
+    private BigDecimal totalValue;
+    private String transactionType;
+    private String transactionId;
+    private String referenceNumber;
+    private String referenceType;
+    private String notes;
+    private String createdBy;
+    private LocalDateTime createdAt;
+    
     private Integer minStockLevel;
     private Integer maxStockLevel;
     private Integer reorderPoint;
@@ -32,8 +37,10 @@ public class ItemResponse {
     private String supplierName;
     private String supplierCode;
     private BigDecimal costPrice;
-    private Timestamp lastRestockDate;
-    private Timestamp lastStockCheck;
+    private LocalDateTime lastRestockDate;
+    private LocalDateTime lastStockCheck;
+    
+
     private String stockStatus; // LOW_STOCK, OUT_OF_STOCK, NORMAL, OVERSTOCK
     private Boolean needsReorder;
     private Integer reorderQuantity;

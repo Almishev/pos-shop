@@ -49,4 +49,20 @@ public class ItemEntity {
     @JoinColumn(name = "category_id", nullable = false)
     @OnDelete(action = OnDeleteAction.RESTRICT)
     private CategoryEntity category;
+    
+    @Builder.Default
+    private Integer stockQuantity = 0;
+    @Builder.Default
+    private Integer minStockLevel = 0;
+    @Builder.Default
+    private Integer maxStockLevel = 1000;
+    @Builder.Default
+    private Integer reorderPoint = 10;
+    @Builder.Default
+    private String unitOfMeasure = "pcs";
+    private String supplierName;
+    private String supplierCode;
+    private BigDecimal costPrice;
+    private Timestamp lastRestockDate;
+    private Timestamp lastStockCheck;
 }

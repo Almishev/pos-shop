@@ -85,7 +85,7 @@ class CategoryServiceIntegrationTest {
     @Test
     @DisplayName("Should save multiple categories and retrieve all")
     void shouldSaveMultipleCategoriesAndRetrieveAll() throws IOException {
-        // Arrange
+        
         when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
 
         CategoryRequest categoryRequest2 = CategoryRequest.builder()
@@ -94,12 +94,10 @@ class CategoryServiceIntegrationTest {
                 .bgColor("#33FF57")
                 .build();
 
-        // Act
         categoryService.add(categoryRequest, multipartFile);
         categoryService.add(categoryRequest2, multipartFile);
         List<CategoryResponse> allCategories = categoryService.read();
 
-        // Assert
         assertEquals(2, allCategories.size());
         assertTrue(allCategories.stream()
                 .anyMatch(cat -> cat.getName().equals("Test Electronics")));
@@ -110,16 +108,16 @@ class CategoryServiceIntegrationTest {
     @Test
     @DisplayName("Should delete category from database")
     void shouldDeleteCategoryFromDatabase() throws IOException {
-        // Arrange
+       
         when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
         CategoryResponse savedCategory = categoryService.add(categoryRequest, multipartFile);
         String categoryId = savedCategory.getCategoryId();
 
-        // Act
+       
         categoryService.delete(categoryId);
         List<CategoryResponse> allCategories = categoryService.read();
 
-        // Assert
+        
         assertEquals(0, allCategories.size());
         assertTrue(categoryRepository.findByCategoryId(categoryId).isEmpty());
     }
@@ -127,7 +125,7 @@ class CategoryServiceIntegrationTest {
     @Test
     @DisplayName("Should throw exception when deleting non-existent category")
     void shouldThrowExceptionWhenDeletingNonExistentCategory() {
-        // Act & Assert
+       
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
             categoryService.delete("non-existent-id");
         });
@@ -162,16 +160,14 @@ class CategoryServiceIntegrationTest {
     @Test
     @DisplayName("Should verify category entity persistence")
     void shouldVerifyCategoryEntityPersistence() throws IOException {
-        // Arrange
+       
         when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
 
-        // Act
         CategoryResponse savedCategory = categoryService.add(categoryRequest, multipartFile);
         
-        // Проверка директно в базата данни
+       
         CategoryEntity persistedEntity = categoryRepository.findByCategoryId(savedCategory.getCategoryId()).orElse(null);
 
-        // Assert
         assertNotNull(persistedEntity);
         assertEquals(categoryRequest.getName(), persistedEntity.getName());
         assertEquals(categoryRequest.getDescription(), persistedEntity.getDescription());

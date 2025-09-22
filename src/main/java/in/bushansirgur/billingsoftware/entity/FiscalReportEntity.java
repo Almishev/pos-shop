@@ -22,31 +22,32 @@ public class FiscalReportEntity {
     private Long id;
     
     @Column(unique = true)
-    private String reportNumber; // Номер на отчета
+    private String reportNumber;
     
     @Enumerated(EnumType.STRING)
-    private ReportType reportType; // Тип на отчета
+    private ReportType reportType;
+
+
+    private LocalDate reportDate;
     
-    private LocalDate reportDate; // Дата на отчета
+    private LocalDateTime generatedAt;
     
-    private LocalDateTime generatedAt; // Кога е генериран
+    private Integer totalReceipts; 
     
-    private Integer totalReceipts; // Общ брой разписки
+    private BigDecimal totalSales;
     
-    private BigDecimal totalSales; // Общ оборот
+    private BigDecimal totalVAT;
     
-    private BigDecimal totalVAT; // Общо ДДС
+    private BigDecimal totalNetSales;
     
-    private BigDecimal totalNetSales; // Общо нетни продажби
+    private String cashierName;
     
-    private String cashierName; // Име на касиера
-    
-    private String deviceSerialNumber; // Сериен номер на ФУ
+    private String deviceSerialNumber; 
     
     @Enumerated(EnumType.STRING)
-    private ReportStatus status; // Статус на отчета
+    private ReportStatus status; 
     
-    private String notes; // Бележки
+    private String notes; 
     
     @PrePersist
     protected void onCreate() {
@@ -57,18 +58,18 @@ public class FiscalReportEntity {
     }
     
     public enum ReportType {
-        DAILY,      // Дневен отчет
-        SHIFT,      // Сменен отчет
-        MONTHLY,    // Месечен отчет
-        YEARLY,     // Годишен отчет
-        Z_REPORT,   // Z-отчет (краен дневен)
-        X_REPORT    // X-отчет (междинен)
+        DAILY,    
+        SHIFT,     
+        MONTHLY,   
+        YEARLY,    
+        Z_REPORT,  
+        X_REPORT   
     }
     
     public enum ReportStatus {
-        GENERATED,  // Генериран
-        SENT_TO_NAF, // Изпратен към НАП
-        CONFIRMED,  // Потвърден
-        ERROR       // Грешка
+        GENERATED,  
+        SENT_TO_NAF, 
+        CONFIRMED,  
+        ERROR     
     }
 }

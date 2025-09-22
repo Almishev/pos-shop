@@ -8,7 +8,6 @@ import java.util.List;
 
 public interface FiscalReportService {
     
-    // Генериране на отчети
     FiscalReportResponse generateDailyReport(FiscalReportRequest request);
     
     FiscalReportResponse generateShiftReport(FiscalReportRequest request);
@@ -17,7 +16,6 @@ public interface FiscalReportService {
     
     FiscalReportResponse generateYearlyReport(FiscalReportRequest request);
     
-    // Извличане на отчети
     List<FiscalReportResponse> getAllReports();
     
     FiscalReportResponse getReportById(Long reportId);
@@ -30,12 +28,10 @@ public interface FiscalReportService {
     
     List<FiscalReportResponse> getReportsByDevice(String deviceSerialNumber);
     
-    // Изпращане към НАП
     boolean sendReportToNAF(Long reportId);
     
     boolean sendReportToNAF(String reportNumber);
     
-    // Статистика
     Double getTotalSalesForDate(LocalDate date);
     
     Double getTotalVATForDate(LocalDate date);
