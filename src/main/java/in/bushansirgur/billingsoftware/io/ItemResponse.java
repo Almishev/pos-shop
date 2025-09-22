@@ -37,4 +37,5 @@ public class ItemResponse {
     private String stockStatus; // LOW_STOCK, OUT_OF_STOCK, NORMAL, OVERSTOCK
     private Boolean needsReorder;
     private Integer reorderQuantity;
+    private BigDecimal vatRate;
 }

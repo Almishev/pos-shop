@@ -18,4 +18,5 @@ public class ItemRequest {
     private String categoryId;
     private String description;
     private String barcode;
+    private BigDecimal vatRate; // 0.20, 0.09, 0.00
 }

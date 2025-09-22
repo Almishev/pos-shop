@@ -65,4 +65,8 @@ public class ItemEntity {
     private BigDecimal costPrice;
     private Timestamp lastRestockDate;
     private Timestamp lastStockCheck;
+
+    // Bulgarian VAT support: item-specific VAT rate (e.g., 0.20, 0.09, 0.00)
+    @Builder.Default
+    private BigDecimal vatRate = new BigDecimal("0.20");
 }

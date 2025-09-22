@@ -80,6 +80,7 @@ public class ItemServiceImpl implements ItemService {
                 .stockStatus(stockStatus)
                 .needsReorder(needsReorder)
                 .reorderQuantity(reorderQuantity)
+                .vatRate(newItem.getVatRate())
                 .build();
     }
     
@@ -108,6 +109,7 @@ public class ItemServiceImpl implements ItemService {
                 .description(request.getDescription())
                 .price(request.getPrice())
                 .barcode(barcode)
+                .vatRate(request.getVatRate() == null ? new java.math.BigDecimal("0.20") : request.getVatRate())
                 .build();
     }
 
