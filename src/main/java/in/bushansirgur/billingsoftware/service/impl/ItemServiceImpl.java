@@ -99,8 +99,15 @@ public class ItemServiceImpl implements ItemService {
     private ItemEntity convertToEntity(ItemRequest request) {
         String barcode = request.getBarcode();
         if (barcode == null || barcode.trim().isEmpty()) {
-            // Generate a unique barcode if none provided
-            barcode = "BC" + System.currentTimeMillis() + String.valueOf((int)(Math.random() * 1000));
+            // Generate valid EAN-13 if none provided
+            String base12 = String.valueOf(System.currentTimeMillis());
+            if (base12.length() > 12) {
+                base12 = base12.substring(base12.length() - 12);
+            } else if (base12.length() < 12) {
+                base12 = ("000000000000" + base12).substring(base12.length());
+            }
+            int checksum = computeEan13Checksum(base12);
+            barcode = base12 + checksum;
         }
         
         return ItemEntity.builder()
@@ -111,6 +118,15 @@ public class ItemServiceImpl implements ItemService {
                 .barcode(barcode)
                 .vatRate(request.getVatRate() == null ? new java.math.BigDecimal("0.20") : request.getVatRate())
                 .build();
+    }
+
+    private int computeEan13Checksum(String base12Digits) {
+        int sum = 0;
+        for (int i = 0; i < base12Digits.length(); i++) {
+            int digit = base12Digits.charAt(i) - '0';
+            sum += digit * ((i % 2 == 0) ? 1 : 3);
+        }
+        return (10 - (sum % 10)) % 10;
     }
 
     @Override

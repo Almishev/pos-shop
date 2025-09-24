@@ -56,10 +56,29 @@ public class ItemController {
 
     @GetMapping("/items/generate-barcode")
     public ResponseEntity<Map<String, String>> generateBarcode() {
-        String barcode = "BC" + System.currentTimeMillis() + String.valueOf((int)(Math.random() * 1000));
+        // Generate a valid EAN-13 numeric barcode
+        // Strategy: use a 12-digit base from timestamp/random, then append checksum
+        String base12 = String.valueOf(System.currentTimeMillis());
+        // Ensure length 12 by trimming/padding
+        if (base12.length() > 12) {
+            base12 = base12.substring(base12.length() - 12);
+        } else if (base12.length() < 12) {
+            base12 = ("000000000000" + base12).substring(base12.length());
+        }
+        int check = computeEan13Checksum(base12);
+        String barcode = base12 + check;
         Map<String, String> response = new HashMap<>();
         response.put("barcode", barcode);
         return ResponseEntity.ok(response);
+    }
+
+    private int computeEan13Checksum(String base12Digits) {
+        int sum = 0;
+        for (int i = 0; i < base12Digits.length(); i++) {
+            int digit = base12Digits.charAt(i) - '0';
+            sum += digit * ((i % 2 == 0) ? 1 : 3);
+        }
+        return (10 - (sum % 10)) % 10;
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
