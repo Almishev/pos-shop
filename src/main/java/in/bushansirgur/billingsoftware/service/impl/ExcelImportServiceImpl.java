@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.util.*;
 
@@ -36,29 +38,36 @@ public class ExcelImportServiceImpl implements ExcelImportService {
         int failedImports = 0;
         int totalRows = 0;
 
-        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
-            Sheet sheet = workbook.getSheetAt(0);
-            
-            // Skip header row
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) continue;
+        String filename = file.getOriginalFilename();
+        if (filename != null && filename.toLowerCase().endsWith(".csv")) {
+            // Handle CSV file
+            return importFromCSV(file, errors, warnings);
+        } else {
+            // Handle Excel file
+            try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+                Sheet sheet = workbook.getSheetAt(0);
                 
-                totalRows++;
-                
-                try {
-                    ExcelImportRequest request = parseRow(row);
-                    if (request != null) {
-                        importProduct(request);
-                        successfulImports++;
-                    } else {
+                // Skip header row
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+                    
+                    totalRows++;
+                    
+                    try {
+                        ExcelImportRequest request = parseRow(row);
+                        if (request != null) {
+                            importProduct(request);
+                            successfulImports++;
+                        } else {
+                            failedImports++;
+                            errors.add("Row " + (i + 1) + ": Invalid data format");
+                        }
+                    } catch (Exception e) {
                         failedImports++;
-                        errors.add("Row " + (i + 1) + ": Invalid data format");
+                        errors.add("Row " + (i + 1) + ": " + e.getMessage());
+                        log.error("Error importing row {}: {}", i + 1, e.getMessage());
                     }
-                } catch (Exception e) {
-                    failedImports++;
-                    errors.add("Row " + (i + 1) + ": " + e.getMessage());
-                    log.error("Error importing row {}: {}", i + 1, e.getMessage());
                 }
             }
         }
@@ -204,6 +213,116 @@ public class ExcelImportServiceImpl implements ExcelImportService {
                     return null;
             }
         } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private ExcelImportResponse importFromCSV(MultipartFile file, List<String> errors, List<String> warnings) throws IOException {
+        int successfulImports = 0;
+        int failedImports = 0;
+        int totalRows = 0;
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), "UTF-8"))) {
+            String line;
+            boolean isFirstLine = true;
+            
+            while ((line = reader.readLine()) != null) {
+                if (isFirstLine) {
+                    isFirstLine = false;
+                    continue; // Skip header row
+                }
+                
+                totalRows++;
+                
+                try {
+                    String[] values = parseCSVLine(line);
+                    if (values.length >= 7) { // Minimum required columns
+                        ExcelImportRequest request = parseCSVRow(values);
+                        if (request != null) {
+                            importProduct(request);
+                            successfulImports++;
+                        } else {
+                            failedImports++;
+                            errors.add("Row " + (totalRows + 1) + ": Invalid data format");
+                        }
+                    } else {
+                        failedImports++;
+                        errors.add("Row " + (totalRows + 1) + ": Insufficient columns");
+                    }
+                } catch (Exception e) {
+                    failedImports++;
+                    errors.add("Row " + (totalRows + 1) + ": " + e.getMessage());
+                    log.error("Error importing CSV row {}: {}", totalRows + 1, e.getMessage());
+                }
+            }
+        }
+
+        String message = String.format("CSV Import completed. %d successful, %d failed out of %d total rows.", 
+                successfulImports, failedImports, totalRows);
+
+        return ExcelImportResponse.builder()
+                .totalRows(totalRows)
+                .successfulImports(successfulImports)
+                .failedImports(failedImports)
+                .errors(errors)
+                .warnings(warnings)
+                .message(message)
+                .build();
+    }
+
+    private String[] parseCSVLine(String line) {
+        List<String> result = new ArrayList<>();
+        boolean inQuotes = false;
+        StringBuilder current = new StringBuilder();
+        
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            
+            if (c == '"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                result.add(current.toString().trim());
+                current = new StringBuilder();
+            } else {
+                current.append(c);
+            }
+        }
+        
+        result.add(current.toString().trim());
+        return result.toArray(new String[0]);
+    }
+
+    private ExcelImportRequest parseCSVRow(String[] values) {
+        try {
+            // Expected columns: Category Name, Category Description, Item Name, Item Description, Barcode, VAT Rate, Price, Stock Quantity
+            String categoryName = values.length > 0 ? values[0] : null;
+            String categoryDescription = values.length > 1 ? values[1] : "";
+            String itemName = values.length > 2 ? values[2] : null;
+            String itemDescription = values.length > 3 ? values[3] : "";
+            String barcode = values.length > 4 ? values[4] : "";
+            BigDecimal vatRate = values.length > 5 && !values[5].isEmpty() ? new BigDecimal(values[5]) : new BigDecimal("0.20");
+            BigDecimal price = values.length > 6 && !values[6].isEmpty() ? new BigDecimal(values[6]) : null;
+            Integer stockQuantity = values.length > 7 && !values[7].isEmpty() ? Integer.parseInt(values[7]) : 0;
+
+            // Validate required fields
+            if (categoryName == null || categoryName.trim().isEmpty() ||
+                itemName == null || itemName.trim().isEmpty() ||
+                price == null) {
+                return null;
+            }
+
+            return ExcelImportRequest.builder()
+                    .categoryName(categoryName.trim())
+                    .categoryDescription(categoryDescription.trim())
+                    .itemName(itemName.trim())
+                    .itemDescription(itemDescription.trim())
+                    .barcode(barcode.trim())
+                    .vatRate(vatRate)
+                    .price(price)
+                    .stockQuantity(stockQuantity)
+                    .build();
+        } catch (Exception e) {
+            log.error("Error parsing CSV row: {}", e.getMessage());
             return null;
         }
     }

@@ -24,25 +24,41 @@ public class ExcelImportController {
     public ResponseEntity<ExcelImportResponse> importProducts(@RequestParam("file") MultipartFile file) {
         try {
             // Validate file type
-            if (!isExcelFile(file)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only Excel files (.xlsx) are allowed");
+            if (!isValidFile(file)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only Excel (.xlsx) or CSV files are allowed");
             }
 
             ExcelImportResponse response = excelImportService.importProductsFromExcel(file);
             return ResponseEntity.ok(response);
         } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error processing Excel file: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error processing file: " + e.getMessage());
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error importing products: " + e.getMessage());
         }
     }
 
-    private boolean isExcelFile(MultipartFile file) {
+    private boolean isValidFile(MultipartFile file) {
         String contentType = file.getContentType();
-        return contentType != null && (
+        String filename = file.getOriginalFilename();
+        
+        if (filename == null) return false;
+        
+        String lowerFilename = filename.toLowerCase();
+        
+        // Check for Excel files
+        boolean isExcel = contentType != null && (
                 contentType.equals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") ||
                 contentType.equals("application/vnd.ms-excel") ||
-                file.getOriginalFilename() != null && file.getOriginalFilename().toLowerCase().endsWith(".xlsx")
+                lowerFilename.endsWith(".xlsx")
         );
+        
+        // Check for CSV files
+        boolean isCsv = contentType != null && (
+                contentType.equals("text/csv") ||
+                contentType.equals("application/csv") ||
+                lowerFilename.endsWith(".csv")
+        );
+        
+        return isExcel || isCsv;
     }
 }
