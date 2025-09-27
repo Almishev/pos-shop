@@ -24,7 +24,7 @@ public class CategoryController {
     @PostMapping("/admin/categories")
     @ResponseStatus(HttpStatus.CREATED)
     public CategoryResponse addCategory(@RequestPart("category") String categoryString,
-                                        @RequestPart("file") MultipartFile file) {
+                                        @RequestPart(value = "file", required = false) MultipartFile file) {
         ObjectMapper objectMapper = new ObjectMapper();
         CategoryRequest request = null;
         try {

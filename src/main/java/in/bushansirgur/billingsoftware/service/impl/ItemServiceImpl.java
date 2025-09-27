@@ -37,7 +37,13 @@ public class ItemServiceImpl implements ItemService {
                     });
         }
         
-        String imgUrl = fileUploadService.uploadFile(file);
+        String imgUrl = null;
+        if (file != null && !file.isEmpty()) {
+            imgUrl = fileUploadService.uploadFile(file);
+        } else {
+            // Set default supermarket image URL if no file is provided
+            imgUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
+        }
         ItemEntity newItem = convertToEntity(request);
         CategoryEntity existingCategory = categoryRepository.findByCategoryId(request.getCategoryId())
                 .orElseThrow(() -> new RuntimeException("Category not found: "+request.getCategoryId()));

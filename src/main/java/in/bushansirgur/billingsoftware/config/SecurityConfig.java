@@ -47,7 +47,8 @@ public class SecurityConfig {
                             "/items/generate-barcode",
                             "/items/barcode/**",
                             "/items/search",
-                            "/fiscal/**"
+                            "/fiscal/**",
+                            "/loyalty/**"
                     ).hasAnyRole("USER", "ADMIN")
                     // Admin-only endpoints (full inventory UI/APIs), but allow auto inventory ops for USER too
                     .requestMatchers("/admin/**", "/inventory", "/inventory/**").hasRole("ADMIN")

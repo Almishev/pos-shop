@@ -26,6 +26,10 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Override
     public String uploadFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return null;
+        }
+        
         String filenameExtension = file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf(".")+1);
         String key = UUID.randomUUID().toString()+"."+filenameExtension;
         try {
@@ -49,6 +53,10 @@ public class FileUploadServiceImpl implements FileUploadService {
 
     @Override
     public boolean deleteFile(String imgUrl) {
+        if (imgUrl == null || imgUrl.trim().isEmpty()) {
+            return true; // Nothing to delete
+        }
+        
         String filename = imgUrl.substring(imgUrl.lastIndexOf("/")+1);
         DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
                 .bucket(bucketName)

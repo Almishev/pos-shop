@@ -26,7 +26,13 @@ public class CategoryServiceImpl implements CategoryService {
     private final FileUploadService fileUploadService;
 
     public CategoryResponse add(CategoryRequest request, MultipartFile file) throws IOException {
-        String imgUrl = fileUploadService.uploadFile(file);
+        String imgUrl = null;
+        if (file != null && !file.isEmpty()) {
+            imgUrl = fileUploadService.uploadFile(file);
+        } else {
+            // Set default supermarket image URL if no file is provided
+            imgUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
+        }
         CategoryEntity newCategory = convertToEntity(request);
         newCategory.setImgUrl(imgUrl);
         newCategory = categoryRepository.save(newCategory);

@@ -26,7 +26,7 @@ public class ItemController {
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/admin/items")
     public ItemResponse addItem(@RequestPart("item") String itemString,
-                                @RequestPart("file") MultipartFile file) {
+                                @RequestPart(value = "file", required = false) MultipartFile file) {
         ObjectMapper objectMapper = new ObjectMapper();
         ItemRequest itemRequest = null;
         try {
