@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.bushansirgur.billingsoftware.io.ItemRequest;
 import in.bushansirgur.billingsoftware.io.ItemResponse;
+import in.bushansirgur.billingsoftware.entity.ItemEntity;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -54,6 +55,36 @@ public class ItemController {
         return itemService.searchItems(q);
     }
 
+    @PostMapping("/admin/items/generate-missing-ids")
+    public ResponseEntity<String> generateMissingItemIds() {
+        try {
+            itemService.generateMissingItemIds();
+            return ResponseEntity.ok("Missing item IDs generated successfully");
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error generating missing item IDs: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/items/debug/all")
+    public ResponseEntity<List<Map<String, Object>>> debugAllItems() {
+        try {
+            List<ItemEntity> items = itemService.getAllItemsForDebug();
+            List<Map<String, Object>> debugInfo = items.stream()
+                    .map(item -> {
+                        Map<String, Object> info = new java.util.HashMap<>();
+                        info.put("id", item.getId());
+                        info.put("itemId", item.getItemId());
+                        info.put("name", item.getName());
+                        info.put("hasItemId", item.getItemId() != null && !item.getItemId().trim().isEmpty());
+                        return info;
+                    })
+                    .collect(java.util.stream.Collectors.toList());
+            return ResponseEntity.ok(debugInfo);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error getting debug info: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/items/generate-barcode")
     public ResponseEntity<Map<String, String>> generateBarcode() {
         // Generate a valid EAN-13 numeric barcode
@@ -79,6 +110,38 @@ public class ItemController {
             sum += digit * ((i % 2 == 0) ? 1 : 3);
         }
         return (10 - (sum % 10)) % 10;
+    }
+
+    @PutMapping("/admin/items/{itemId}")
+    public ItemResponse updateItem(@PathVariable String itemId,
+                                  @RequestPart("item") String itemString,
+                                  @RequestPart(value = "file", required = false) MultipartFile file) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        ItemRequest itemRequest = null;
+        try {
+            itemRequest = objectMapper.readValue(itemString, ItemRequest.class);
+            return itemService.update(itemId, itemRequest, file);
+        } catch (JsonProcessingException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error occurred while processing the json: " + ex.getMessage());
+        } catch (IOException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error occurred while processing the file: " + ex.getMessage());
+        }
+    }
+
+    @GetMapping("/items/{itemId}")
+    public ItemResponse getItemById(@PathVariable String itemId) {
+        System.out.println("=== ItemController.getItemById called ===");
+        System.out.println("ItemId: " + itemId);
+        System.out.println("ItemId type: " + itemId.getClass().getSimpleName());
+        try {
+            ItemResponse response = itemService.getItemById(itemId);
+            System.out.println("Item found: " + response.getName());
+            return response;
+        } catch (Exception e) {
+            System.err.println("Error getting item by ID: " + itemId);
+            System.err.println("Error: " + e.getMessage());
+            throw e;
+        }
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)

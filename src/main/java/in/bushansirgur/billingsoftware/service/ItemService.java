@@ -11,6 +11,10 @@ public interface ItemService {
 
     ItemResponse add(ItemRequest request, MultipartFile file) throws IOException;
 
+    ItemResponse update(String itemId, ItemRequest request, MultipartFile file) throws IOException;
+
+    ItemResponse getItemById(String itemId);
+
     List<ItemResponse> fetchItems();
 
     ItemResponse findItemByBarcode(String barcode);
@@ -18,4 +22,8 @@ public interface ItemService {
     List<ItemResponse> searchItems(String searchTerm);
 
     void deleteItem(String itemId);
+    
+    void generateMissingItemIds();
+    
+    List<in.bushansirgur.billingsoftware.entity.ItemEntity> getAllItemsForDebug();
 }

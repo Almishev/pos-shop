@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -62,8 +63,16 @@ public class ItemServiceImpl implements ItemService {
         Integer reorderQuantity = needsReorder && newItem.getMaxStockLevel() != null ? 
             newItem.getMaxStockLevel() - newItem.getStockQuantity() : 0;
         
+        // Generate itemId if missing (for legacy items)
+        String itemId = newItem.getItemId();
+        if (itemId == null || itemId.trim().isEmpty()) {
+            itemId = java.util.UUID.randomUUID().toString();
+            newItem.setItemId(itemId);
+            itemRepository.save(newItem); // Save the generated itemId
+        }
+        
         return ItemResponse.builder()
-                .itemId(newItem.getItemId())
+                .itemId(itemId)
                 .name(newItem.getName())
                 .description(newItem.getDescription())
                 .price(newItem.getPrice())
@@ -137,9 +146,25 @@ public class ItemServiceImpl implements ItemService {
 
     @Override
     public List<ItemResponse> fetchItems() {
-        return itemRepository.findAll()
-                .stream()
-                .map(itemEntity -> convertToResponse(itemEntity))
+        System.out.println("=== ItemServiceImpl.fetchItems called ===");
+        List<ItemEntity> allItems = itemRepository.findAll();
+        System.out.println("Total items in database: " + allItems.size());
+        
+        return allItems.stream()
+                .map(itemEntity -> {
+                    System.out.println("Processing item: " + itemEntity.getName() + 
+                                     " (ID: " + itemEntity.getId() + 
+                                     ", itemId: " + itemEntity.getItemId() + ")");
+                    
+                    // Ensure itemId exists for all items
+                    if (itemEntity.getItemId() == null || itemEntity.getItemId().trim().isEmpty()) {
+                        String newItemId = java.util.UUID.randomUUID().toString();
+                        System.out.println("Generating new itemId for " + itemEntity.getName() + ": " + newItemId);
+                        itemEntity.setItemId(newItemId);
+                        itemRepository.save(itemEntity);
+                    }
+                    return convertToResponse(itemEntity);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -159,10 +184,93 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
+    public ItemResponse update(String itemId, ItemRequest request, MultipartFile file) throws IOException {
+        ItemEntity existingItem = itemRepository.findByItemId(itemId)
+                .orElseThrow(() -> new RuntimeException("Item not found: " + itemId));
+
+        // Update basic fields
+        existingItem.setName(request.getName());
+        existingItem.setDescription(request.getDescription());
+        existingItem.setPrice(request.getPrice());
+        existingItem.setBarcode(request.getBarcode());
+        existingItem.setVatRate(request.getVatRate());
+
+        // Update category if provided
+        if (request.getCategoryId() != null && !request.getCategoryId().isEmpty()) {
+            CategoryEntity category = categoryRepository.findByCategoryId(request.getCategoryId())
+                    .orElseThrow(() -> new RuntimeException("Category not found: " + request.getCategoryId()));
+            existingItem.setCategory(category);
+        }
+
+        // Handle image upload if provided
+        if (file != null && !file.isEmpty()) {
+            // Delete old image if exists
+            if (existingItem.getImgUrl() != null && !existingItem.getImgUrl().trim().isEmpty()) {
+                fileUploadService.deleteFile(existingItem.getImgUrl());
+            }
+            // Upload new image
+            String imgUrl = fileUploadService.uploadFile(file);
+            existingItem.setImgUrl(imgUrl);
+        }
+        // Keep existing image if no new image is provided
+
+        ItemEntity updatedItem = itemRepository.save(existingItem);
+        return convertToResponse(updatedItem);
+    }
+
+    @Override
+    public ItemResponse getItemById(String itemId) {
+        System.out.println("=== ItemServiceImpl.getItemById called ===");
+        System.out.println("Searching for itemId: " + itemId);
+        
+        Optional<ItemEntity> itemOpt = itemRepository.findByItemId(itemId);
+        System.out.println("Item found: " + itemOpt.isPresent());
+        
+        if (itemOpt.isEmpty()) {
+            System.err.println("Item not found with itemId: " + itemId);
+            // Try to find by numeric ID as fallback
+            try {
+                Long numericId = Long.parseLong(itemId);
+                System.out.println("Trying to find by numeric ID: " + numericId);
+                Optional<ItemEntity> itemByNumericId = itemRepository.findById(numericId);
+                if (itemByNumericId.isPresent()) {
+                    System.out.println("Found item by numeric ID: " + itemByNumericId.get().getName());
+                    return convertToResponse(itemByNumericId.get());
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("ItemId is not a valid UUID or numeric ID: " + itemId);
+            }
+            throw new RuntimeException("Item not found: " + itemId);
+        }
+        
+        ItemEntity item = itemOpt.get();
+        System.out.println("Found item: " + item.getName() + " with itemId: " + item.getItemId());
+        return convertToResponse(item);
+    }
+
+    @Override
     public void deleteItem(String itemId) {
         ItemEntity existingItem = itemRepository.findByItemId(itemId)
                 .orElseThrow(() -> new RuntimeException("Item not found: "+itemId));
         fileUploadService.deleteFile(existingItem.getImgUrl());
         itemRepository.delete(existingItem);
+    }
+    
+    @Override
+    public void generateMissingItemIds() {
+        List<ItemEntity> itemsWithoutId = itemRepository.findAll()
+                .stream()
+                .filter(item -> item.getItemId() == null || item.getItemId().trim().isEmpty())
+                .collect(Collectors.toList());
+        
+        for (ItemEntity item : itemsWithoutId) {
+            item.setItemId(java.util.UUID.randomUUID().toString());
+            itemRepository.save(item);
+        }
+    }
+    
+    @Override
+    public List<ItemEntity> getAllItemsForDebug() {
+        return itemRepository.findAll();
     }
 }
