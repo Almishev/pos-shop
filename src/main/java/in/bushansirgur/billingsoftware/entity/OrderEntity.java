@@ -3,6 +3,7 @@ package in.bushansirgur.billingsoftware.entity;
 import in.bushansirgur.billingsoftware.io.PaymentDetails;
 import in.bushansirgur.billingsoftware.io.PaymentMethod;
 import jakarta.persistence.*;
+import jakarta.persistence.Index;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,7 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "tbl_orders")
+@Table(name = "tbl_orders", indexes = {
+        @Index(name = "idx_orders_created_at", columnList = "createdAt"),
+        @Index(name = "idx_orders_order_id", columnList = "orderId", unique = true),
+        @Index(name = "idx_orders_payment_method", columnList = "paymentMethod"),
+        @Index(name = "idx_orders_cashier_username", columnList = "cashierUsername")
+})
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -40,6 +46,9 @@ public class OrderEntity {
 
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
+
+    // Username of the cashier who created the order
+    private String cashierUsername;
 
     @PrePersist
     protected void onCreate() {

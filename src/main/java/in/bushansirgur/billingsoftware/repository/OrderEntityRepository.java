@@ -2,9 +2,11 @@ package in.bushansirgur.billingsoftware.repository;
 
 import in.bushansirgur.billingsoftware.entity.OrderEntity;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import java.time.LocalDateTime;
 
 
 import java.time.LocalDate;
@@ -25,5 +27,16 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
 
     @Query("SELECT o FROM OrderEntity o ORDER BY o.createdAt DESC")
     List<OrderEntity> findRecentOrders(Pageable pageable);
+
+    List<OrderEntity> findAllByCreatedAtBetweenOrderByCreatedAtAsc(LocalDateTime from, LocalDateTime to);
+
+    @Query("SELECT o FROM OrderEntity o WHERE (:q IS NULL OR LOWER(o.orderId) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.customerName) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.phoneNumber) LIKE LOWER(CONCAT('%', :q, '%'))) AND (:from IS NULL OR o.createdAt >= :from) AND (:to IS NULL OR o.createdAt <= :to)")
+    Page<OrderEntity> searchOrders(@Param("q") String q,
+                                   @Param("from") LocalDateTime from,
+                                   @Param("to") LocalDateTime to,
+                                   Pageable pageable);
+
+    @Query("SELECT o.cashierUsername as cashier, COUNT(o) as cnt, COALESCE(SUM(o.grandTotal),0) as total FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to GROUP BY o.cashierUsername")
+    List<Object[]> summarizeByCashier(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
 }

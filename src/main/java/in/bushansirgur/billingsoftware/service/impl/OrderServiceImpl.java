@@ -7,8 +7,12 @@ import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
 import in.bushansirgur.billingsoftware.service.InventoryService;
 import in.bushansirgur.billingsoftware.service.OrderService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -35,6 +39,14 @@ public class OrderServiceImpl implements OrderService {
                 .map(this::convertToOrderItemEntity)
                 .collect(Collectors.toList());
         newOrder.setItems(orderItems);
+
+        // Set cashier username from authenticated principal
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()) {
+                newOrder.setCashierUsername(auth.getName());
+            }
+        } catch (Exception ignored) {}
         
         newOrder = orderEntityRepository.save(newOrder);
 
@@ -71,6 +83,7 @@ public class OrderServiceImpl implements OrderService {
                 .tax(newOrder.getTax())
                 .grandTotal(newOrder.getGrandTotal())
                 .paymentMethod(newOrder.getPaymentMethod())
+                .cashierUsername(newOrder.getCashierUsername())
                 .items(newOrder.getItems().stream()
                         .map(this::convertToItemResponse)
                         .collect(Collectors.toList()))
@@ -155,6 +168,31 @@ public class OrderServiceImpl implements OrderService {
                 .stream()
                 .map(orderEntity -> convertToResponse(orderEntity))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public Page<OrderResponse> getOrders(Pageable pageable) {
+        Page<OrderEntity> page = orderEntityRepository.findAll(pageable);
+        List<OrderResponse> content = page.getContent().stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+        return new PageImpl<>(content, pageable, page.getTotalElements());
+    }
+
+    public Page<OrderResponse> getOrders(Pageable pageable, String q, LocalDate fromDate, LocalDate toDate) {
+        boolean noFilters = (q == null || q.isBlank()) && fromDate == null && toDate == null;
+        Page<OrderEntity> page = noFilters
+                ? orderEntityRepository.findAll(pageable)
+                : orderEntityRepository.searchOrders(
+                        (q == null || q.isBlank()) ? null : q,
+                        fromDate == null ? null : fromDate.atStartOfDay(),
+                        toDate == null ? null : toDate.atTime(23,59,59),
+                        pageable
+                );
+        List<OrderResponse> content = page.getContent().stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+        return new PageImpl<>(content, pageable, page.getTotalElements());
     }
 
     private boolean verifyRazorpaySignature(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {

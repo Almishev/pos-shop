@@ -23,6 +23,7 @@ public class OrderResponse {
     private PaymentMethod paymentMethod;
     private LocalDateTime createdAt;
     private PaymentDetails paymentDetails;
+    private String cashierUsername;
 
     @Data
     @AllArgsConstructor
