@@ -51,7 +51,11 @@ public class CategoryServiceImpl implements CategoryService {
     public void delete(String categoryId) {
         CategoryEntity existingCategory = categoryRepository.findByCategoryId(categoryId)
                 .orElseThrow(() -> new RuntimeException("Category not found: "+categoryId));
-        fileUploadService.deleteFile(existingCategory.getImgUrl());
+        // Only delete image if it's not the default image
+        String defaultImageUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
+        if (existingCategory.getImgUrl() != null && !existingCategory.getImgUrl().equals(defaultImageUrl)) {
+            fileUploadService.deleteFile(existingCategory.getImgUrl());
+        }
         categoryRepository.delete(existingCategory);
     }
 

@@ -204,9 +204,12 @@ public class ItemServiceImpl implements ItemService {
 
         // Handle image upload if provided
         if (file != null && !file.isEmpty()) {
-            // Delete old image if exists
+            // Delete old image if exists and it's not the default image
             if (existingItem.getImgUrl() != null && !existingItem.getImgUrl().trim().isEmpty()) {
-                fileUploadService.deleteFile(existingItem.getImgUrl());
+                String defaultImageUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
+                if (!existingItem.getImgUrl().equals(defaultImageUrl)) {
+                    fileUploadService.deleteFile(existingItem.getImgUrl());
+                }
             }
             // Upload new image
             String imgUrl = fileUploadService.uploadFile(file);
@@ -252,7 +255,11 @@ public class ItemServiceImpl implements ItemService {
     public void deleteItem(String itemId) {
         ItemEntity existingItem = itemRepository.findByItemId(itemId)
                 .orElseThrow(() -> new RuntimeException("Item not found: "+itemId));
-        fileUploadService.deleteFile(existingItem.getImgUrl());
+        // Only delete image if it's not the default image
+        String defaultImageUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
+        if (existingItem.getImgUrl() != null && !existingItem.getImgUrl().equals(defaultImageUrl)) {
+            fileUploadService.deleteFile(existingItem.getImgUrl());
+        }
         itemRepository.delete(existingItem);
     }
     
