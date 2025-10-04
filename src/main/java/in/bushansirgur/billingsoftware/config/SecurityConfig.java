@@ -33,6 +33,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
+        System.out.println("=== SecurityConfig.securityFilterChain called ===");
         http.cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
@@ -47,18 +48,10 @@ public class SecurityConfig {
                             "/items/generate-barcode",
                             "/items/barcode/**",
                             "/items/search",
-                            // Cashiers can access only shift fiscal reports; other fiscal endpoints remain admin-only
-                            "/fiscal/reports/shift",
                             "/loyalty/**"
-                            // General reports UI for export remains admin-only (handled below)
                     ).hasAnyRole("USER", "ADMIN")
-                    // Admin-only endpoints (full inventory UI/APIs) and broader report endpoints
-                    .requestMatchers(
-                            "/reports/**",
-                            "/fiscal/**"
-                    ).hasRole("ADMIN")
-                    // Allow auto inventory ops for USER too
-                    .requestMatchers("/admin/**", "/inventory", "/inventory/**").hasRole("ADMIN")
+                    // Admin-only endpoints (users, fiscal devices, reports, inventory)
+                    .requestMatchers("/admin/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )

@@ -11,16 +11,30 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1.0/fiscal")
+@RequestMapping("/admin")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class FiscalDeviceController {
     
     private final FiscalDeviceService fiscalDeviceService;
     
-    @GetMapping("/devices")
+    @GetMapping("/fiscal-devices")
     public ResponseEntity<List<FiscalDeviceEntity>> getAllDevices() {
-        return ResponseEntity.ok(fiscalDeviceService.getAllDevices());
+        System.out.println("=== FiscalDeviceController.getAllDevices called ===");
+        System.out.println("Request received for /api/v1.0/admin/fiscal-devices");
+        
+        try {
+            List<FiscalDeviceEntity> devices = fiscalDeviceService.getAllDevices();
+            System.out.println("Found " + devices.size() + " fiscal devices");
+            for (FiscalDeviceEntity device : devices) {
+                System.out.println("Device: " + device.getSerialNumber() + " - " + device.getStatus());
+            }
+            return ResponseEntity.ok(devices);
+        } catch (Exception e) {
+            System.err.println("Error in getAllDevices: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
     
     @GetMapping("/devices/{serialNumber}")

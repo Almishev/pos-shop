@@ -27,7 +27,21 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
     
     @Override
     public List<FiscalDeviceEntity> getAllDevices() {
-        return fiscalDeviceRepository.findAll();
+        System.out.println("=== FiscalDeviceServiceImpl.getAllDevices called ===");
+        try {
+            List<FiscalDeviceEntity> devices = fiscalDeviceRepository.findAll();
+            System.out.println("Repository returned " + devices.size() + " devices");
+            for (FiscalDeviceEntity device : devices) {
+                System.out.println("Device from DB: ID=" + device.getId() + 
+                                 ", Serial=" + device.getSerialNumber() + 
+                                 ", Status=" + device.getStatus());
+            }
+            return devices;
+        } catch (Exception e) {
+            System.err.println("Error in FiscalDeviceServiceImpl.getAllDevices: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
     
     @Override
