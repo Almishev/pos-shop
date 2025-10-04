@@ -53,13 +53,32 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
     
     @Override
     public FiscalDeviceEntity registerDevice(FiscalDeviceEntity device) {
+        System.out.println("=== FiscalDeviceServiceImpl.registerDevice called ===");
+        System.out.println("Device serial number: " + device.getSerialNumber());
+        System.out.println("Device manufacturer: " + device.getManufacturer());
+        System.out.println("Device model: " + device.getModel());
+        
         // Проверка дали устройството вече съществува
         if (fiscalDeviceRepository.findBySerialNumber(device.getSerialNumber()).isPresent()) {
+            System.err.println("Device with serial number " + device.getSerialNumber() + " already exists");
             throw new ResponseStatusException(HttpStatus.CONFLICT, 
                     "Fiscal device with serial number " + device.getSerialNumber() + " already exists");
         }
         
-        return fiscalDeviceRepository.save(device);
+        // Set default status if not provided
+        if (device.getStatus() == null) {
+            device.setStatus(FiscalDeviceEntity.DeviceStatus.ACTIVE);
+            System.out.println("Set default status to ACTIVE");
+        }
+        
+        // Set registration date
+        device.setRegistrationDate(LocalDateTime.now());
+        System.out.println("Set registration date to: " + device.getRegistrationDate());
+        
+        FiscalDeviceEntity savedDevice = fiscalDeviceRepository.save(device);
+        System.out.println("Device saved successfully with ID: " + savedDevice.getId());
+        
+        return savedDevice;
     }
     
     @Override

@@ -42,20 +42,54 @@ public class FiscalDeviceController {
         return ResponseEntity.ok(fiscalDeviceService.getDeviceBySerialNumber(serialNumber));
     }
     
-    @PostMapping("/devices")
+    @PostMapping("/fiscal-devices")
     public ResponseEntity<FiscalDeviceEntity> registerDevice(@RequestBody FiscalDeviceEntity device) {
-        return ResponseEntity.ok(fiscalDeviceService.registerDevice(device));
+        System.out.println("=== FiscalDeviceController.registerDevice called ===");
+        System.out.println("Request received for /api/v1.0/admin/fiscal-devices");
+        System.out.println("Device data: " + device);
+        
+        try {
+            FiscalDeviceEntity savedDevice = fiscalDeviceService.registerDevice(device);
+            System.out.println("Device registered successfully: " + savedDevice.getId());
+            return ResponseEntity.ok(savedDevice);
+        } catch (Exception e) {
+            System.err.println("Error in registerDevice: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
     
-    @PutMapping("/devices")
+    @PutMapping("/fiscal-devices")
     public ResponseEntity<FiscalDeviceEntity> updateDevice(@RequestBody FiscalDeviceEntity device) {
-        return ResponseEntity.ok(fiscalDeviceService.updateDevice(device));
+        System.out.println("=== FiscalDeviceController.updateDevice called ===");
+        System.out.println("Request received for /api/v1.0/admin/fiscal-devices (PUT)");
+        System.out.println("Device data: " + device);
+        
+        try {
+            FiscalDeviceEntity updatedDevice = fiscalDeviceService.updateDevice(device);
+            System.out.println("Device updated successfully: " + updatedDevice.getId());
+            return ResponseEntity.ok(updatedDevice);
+        } catch (Exception e) {
+            System.err.println("Error in updateDevice: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
     
-    @DeleteMapping("/devices/{deviceId}")
+    @DeleteMapping("/fiscal-devices/{deviceId}")
     public ResponseEntity<Void> deleteDevice(@PathVariable Long deviceId) {
-        fiscalDeviceService.deleteDevice(deviceId);
-        return ResponseEntity.ok().build();
+        System.out.println("=== FiscalDeviceController.deleteDevice called ===");
+        System.out.println("Request received for /api/v1.0/admin/fiscal-devices/" + deviceId + " (DELETE)");
+        
+        try {
+            fiscalDeviceService.deleteDevice(deviceId);
+            System.out.println("Device deleted successfully: " + deviceId);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            System.err.println("Error in deleteDevice: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
     
     @PostMapping("/receipts")
