@@ -1,5 +1,7 @@
 package in.bushansirgur.billingsoftware.io;
 
 public enum PaymentMethod {
-    CASH, UPI
+    CASH,
+    UPI,
+    CARD
 }

@@ -16,6 +16,9 @@ public class PaymentDetails {
     private String razorpayOrderId;
     private String razorpayPaymentId;
     private String razorpaySignature;
+    // POS terminal payment fields
+    private String posTransactionId;
+    private String posAuthCode;
     private PaymentStatus status;
     public enum PaymentStatus {
         PENDING, COMPLETED, FAILED

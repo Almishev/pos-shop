@@ -53,12 +53,16 @@ public class SecurityConfig {
                             "/items/search",
                             "/loyalty/**"
                     ).hasAnyRole("USER", "ADMIN")
+                    // Orders - require authenticated USER/ADMIN
+                    .requestMatchers("/orders", "/orders/**", "/api/v1.0/orders", "/api/v1.0/orders/**").hasAnyRole("USER", "ADMIN")
                     // Read-only fiscal device endpoints for USER and ADMIN
                     .requestMatchers(
                             "/admin/fiscal-devices",
                             "/admin/devices/*/status",
                             "/admin/devices/*/ready"
                     ).hasAnyRole("USER", "ADMIN")
+                    // Fiscal receipts
+                    .requestMatchers("/admin/receipts", "/admin/receipts/**").hasAnyRole("USER", "ADMIN")
                     // Allow USER to generate shift reports; other fiscal reports stay admin-only
                     .requestMatchers("/admin/fiscal-reports/shift").hasAnyRole("USER", "ADMIN")
                     // Label endpoints - simplify: allow without auth to avoid 403 during printing
@@ -73,6 +77,12 @@ public class SecurityConfig {
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )
+                .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
+                    System.out.println("=== AccessDenied === URI: " + request.getRequestURI());
+                    var authc = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                    System.out.println("Auth present: " + (authc != null) + ", user=" + (authc != null ? authc.getName() : "-") + ", roles=" + (authc != null ? authc.getAuthorities() : "-"));
+                    response.setStatus(403);
+                }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

@@ -248,16 +248,16 @@ public class LoyaltyServiceImpl implements LoyaltyService {
         List<PromotionRuleEntity> activeRules = promotionRuleRepository.findActiveRulesAtTime(Timestamp.valueOf(LocalDateTime.now()));
         
         // Filter rules that require loyalty card if customer doesn't have one
-        final CustomerEntity finalCustomer = customer;
         if (customer == null || !customer.getIsLoyaltyActive()) {
             activeRules = activeRules.stream()
                     .filter(rule -> !rule.getRequiresLoyaltyCard())
                     .collect(Collectors.toList());
         } else {
             // Filter rules by minimum loyalty points
+            final int customerPoints = customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0;
             activeRules = activeRules.stream()
-                    .filter(rule -> rule.getMinimumLoyaltyPoints() == null || 
-                                   rule.getMinimumLoyaltyPoints() <= finalCustomer.getLoyaltyPoints())
+                    .filter(rule -> rule.getMinimumLoyaltyPoints() == null ||
+                                   rule.getMinimumLoyaltyPoints() <= customerPoints)
                     .collect(Collectors.toList());
         }
 

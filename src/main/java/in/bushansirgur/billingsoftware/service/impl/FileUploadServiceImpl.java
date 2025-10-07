@@ -30,7 +30,14 @@ public class FileUploadServiceImpl implements FileUploadService {
             return null;
         }
         
-        String filenameExtension = file.getOriginalFilename().substring(file.getOriginalFilename().lastIndexOf(".")+1);
+        String originalFilename = file.getOriginalFilename();
+        String filenameExtension = "bin";
+        if (originalFilename != null) {
+            int dotIndex = originalFilename.lastIndexOf('.');
+            if (dotIndex >= 0 && dotIndex < originalFilename.length() - 1) {
+                filenameExtension = originalFilename.substring(dotIndex + 1);
+            }
+        }
         String key = UUID.randomUUID().toString()+"."+filenameExtension;
         try {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()

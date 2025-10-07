@@ -25,6 +25,17 @@ public class OrderController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse createOrder(@RequestBody OrderRequest request) {
+        try {
+            System.out.println("=== OrderController.createOrder ===");
+            System.out.println("Customer: " + request.getCustomerName() + ", Phone: " + request.getPhoneNumber());
+            System.out.println("Payment method: " + request.getPaymentMethod() + ", GrandTotal: " + request.getGrandTotal());
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null) {
+                System.out.println("Authenticated user: " + auth.getName() + ", roles: " + auth.getAuthorities());
+            } else {
+                System.out.println("No authentication found in SecurityContext");
+            }
+        } catch (Exception ignore) {}
         return orderService.createOrder(request);
     }
 
