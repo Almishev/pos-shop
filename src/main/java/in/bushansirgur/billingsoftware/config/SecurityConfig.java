@@ -64,6 +64,10 @@ public class SecurityConfig {
                     // Label endpoints - simplify: allow without auth to avoid 403 during printing
                     .requestMatchers("/admin/labels/**").permitAll()
                     .requestMatchers("/api/v1.0/admin/labels/**").permitAll()
+                    // Promotions endpoints - align with labels (permit for UI calls)
+                    .requestMatchers("/admin/promotions/**").permitAll()
+                    .requestMatchers("/api/v1.0/admin/promotions/**").permitAll()
+                    .requestMatchers("/items/effective").hasAnyRole("USER", "ADMIN")
                     // Admin-only endpoints (users, other fiscal reports, inventory)
                     .requestMatchers("/admin/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
