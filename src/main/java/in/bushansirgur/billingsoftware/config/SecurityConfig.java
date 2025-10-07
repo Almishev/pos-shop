@@ -18,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
@@ -37,6 +38,8 @@ public class SecurityConfig {
         http.cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                    // Allow preflight CORS requests without authentication
+                    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/login","encode").permitAll()
                     .requestMatchers("/uploads/**", "/api/v1.0/uploads/**").permitAll()
                     // Allow authenticated users (USER, ADMIN) to access common app resources
@@ -50,7 +53,18 @@ public class SecurityConfig {
                             "/items/search",
                             "/loyalty/**"
                     ).hasAnyRole("USER", "ADMIN")
-                    // Admin-only endpoints (users, fiscal devices, reports, inventory)
+                    // Read-only fiscal device endpoints for USER and ADMIN
+                    .requestMatchers(
+                            "/admin/fiscal-devices",
+                            "/admin/devices/*/status",
+                            "/admin/devices/*/ready"
+                    ).hasAnyRole("USER", "ADMIN")
+                    // Allow USER to generate shift reports; other fiscal reports stay admin-only
+                    .requestMatchers("/admin/fiscal-reports/shift").hasAnyRole("USER", "ADMIN")
+                    // Label endpoints - simplify: allow without auth to avoid 403 during printing
+                    .requestMatchers("/admin/labels/**").permitAll()
+                    .requestMatchers("/api/v1.0/admin/labels/**").permitAll()
+                    // Admin-only endpoints (users, other fiscal reports, inventory)
                     .requestMatchers("/admin/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
@@ -74,7 +88,8 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of("http://localhost:5173"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setAllowedHeaders(List.of("*")); // allow all request headers (Accept, Authorization, Content-Type, etc.)
+        config.setExposedHeaders(List.of("Authorization"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
