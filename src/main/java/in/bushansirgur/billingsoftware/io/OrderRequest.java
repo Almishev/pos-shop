@@ -20,6 +20,8 @@ public class OrderRequest {
     private Double tax;
     private Double grandTotal;
     private String paymentMethod;
+    private Double cashAmount;
+    private Double cardAmount;
 
     @Data
     @AllArgsConstructor

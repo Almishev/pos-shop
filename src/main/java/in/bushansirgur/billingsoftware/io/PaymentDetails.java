@@ -19,6 +19,9 @@ public class PaymentDetails {
     // POS terminal payment fields
     private String posTransactionId;
     private String posAuthCode;
+    // Split amounts (optional)
+    private Double cashAmount;
+    private Double cardAmount;
     private PaymentStatus status;
     public enum PaymentStatus {
         PENDING, COMPLETED, FAILED

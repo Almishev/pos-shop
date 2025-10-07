@@ -33,6 +33,11 @@ public class OrderServiceImpl implements OrderService {
         PaymentDetails paymentDetails = new PaymentDetails();
         paymentDetails.setStatus(newOrder.getPaymentMethod() == PaymentMethod.CASH ?
                 PaymentDetails.PaymentStatus.COMPLETED : PaymentDetails.PaymentStatus.PENDING);
+        // handle split amounts if provided
+        if (newOrder.getPaymentMethod() == PaymentMethod.SPLIT) {
+            paymentDetails.setCashAmount(request.getCashAmount());
+            paymentDetails.setCardAmount(request.getCardAmount());
+        }
         newOrder.setPaymentDetails(paymentDetails);
         
         List<OrderItemEntity> orderItems = request.getCartItems().stream()
