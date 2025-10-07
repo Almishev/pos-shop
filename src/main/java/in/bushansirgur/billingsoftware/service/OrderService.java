@@ -2,6 +2,7 @@ package in.bushansirgur.billingsoftware.service;
 
 import in.bushansirgur.billingsoftware.io.OrderRequest;
 import in.bushansirgur.billingsoftware.io.OrderResponse;
+import in.bushansirgur.billingsoftware.io.OrderRefundRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.time.LocalDate;
@@ -31,4 +32,6 @@ public interface OrderService {
     Page<OrderResponse> getOrders(Pageable pageable);
 
     Page<OrderResponse> getOrders(Pageable pageable, String q, LocalDate fromDate, LocalDate toDate);
+
+    OrderResponse refundOrder(OrderRefundRequest request);
 }

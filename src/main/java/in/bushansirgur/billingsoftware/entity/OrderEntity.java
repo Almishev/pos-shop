@@ -2,6 +2,7 @@ package in.bushansirgur.billingsoftware.entity;
 
 import in.bushansirgur.billingsoftware.io.PaymentDetails;
 import in.bushansirgur.billingsoftware.io.PaymentMethod;
+import in.bushansirgur.billingsoftware.io.OrderStatus;
 import jakarta.persistence.*;
 import jakarta.persistence.Index;
 import lombok.AllArgsConstructor;
@@ -47,6 +48,13 @@ public class OrderEntity {
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "order_status")
+    private OrderStatus status;
+
+    // Reference to original order if this record represents a refund/void
+    private String originalOrderId;
+
     // Username of the cashier who created the order
     private String cashierUsername;
 
@@ -54,6 +62,7 @@ public class OrderEntity {
     protected void onCreate() {
         this.orderId = "ORD"+System.currentTimeMillis();
         this.createdAt = LocalDateTime.now();
+        if (this.status == null) this.status = OrderStatus.COMPLETED;
     }
 
 }

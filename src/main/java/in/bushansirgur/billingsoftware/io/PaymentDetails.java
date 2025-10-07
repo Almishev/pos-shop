@@ -19,6 +19,7 @@ public class PaymentDetails {
     // POS terminal payment fields
     private String posTransactionId;
     private String posAuthCode;
+    private String posRefundTransactionId;
     // Split amounts (optional)
     private Double cashAmount;
     private Double cardAmount;

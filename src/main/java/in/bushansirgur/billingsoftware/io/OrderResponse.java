@@ -24,6 +24,8 @@ public class OrderResponse {
     private LocalDateTime createdAt;
     private PaymentDetails paymentDetails;
     private String cashierUsername;
+    private OrderStatus orderStatus;
+    private String originalOrderId;
 
     @Data
     @AllArgsConstructor

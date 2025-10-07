@@ -6,7 +6,10 @@ import in.bushansirgur.billingsoftware.io.*;
 import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
 import in.bushansirgur.billingsoftware.service.InventoryService;
 import in.bushansirgur.billingsoftware.service.OrderService;
+import in.bushansirgur.billingsoftware.service.PosPaymentService;
+import in.bushansirgur.billingsoftware.io.PosPaymentIO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -25,6 +28,7 @@ public class OrderServiceImpl implements OrderService {
     
     private final OrderEntityRepository orderEntityRepository; 
     private final InventoryService inventoryService;
+    private final PosPaymentService posPaymentService;
 
     @Override
     public OrderResponse createOrder(OrderRequest request) {
@@ -69,6 +73,107 @@ public class OrderServiceImpl implements OrderService {
         return convertToResponse(newOrder);
     }
 
+    @Override
+    @Transactional
+    public OrderResponse refundOrder(in.bushansirgur.billingsoftware.io.OrderRefundRequest request) {
+        OrderEntity original = orderEntityRepository.findByOrderId(request.getOrderId())
+                .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        // Restock items (partial or full)
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            for (in.bushansirgur.billingsoftware.io.OrderRefundRequest.RefundItem ri : request.getItems()) {
+                try {
+                    inventoryService.processPurchaseTransaction(ri.getItemId(), ri.getQuantity(), "REF-" + original.getOrderId());
+                } catch (Exception ex) {
+                    System.err.println("Restock failed for item " + ri.getItemId() + ": " + ex.getMessage());
+                }
+            }
+        } else {
+            // Full refund: restock all
+            original.getItems().forEach(oi -> {
+                try {
+                    inventoryService.processPurchaseTransaction(oi.getItemId(), oi.getQuantity(), "REF-" + original.getOrderId());
+                } catch (Exception ex) {
+                    System.err.println("Restock failed for item " + oi.getItemId() + ": " + ex.getMessage());
+                }
+            });
+        }
+
+        // POS refund for card payments (mock/provider controlled in service)
+        if ("CARD".equalsIgnoreCase(request.getRefundMethod())) {
+            try {
+                String originalTxnId = original.getPaymentDetails() != null ? original.getPaymentDetails().getPosTransactionId() : null;
+                Double amount = request.getRefundAmount() != null ? request.getRefundAmount() : original.getGrandTotal();
+                if (originalTxnId != null && amount != null && amount > 0) {
+                    PosPaymentIO.RefundResponse rr = posPaymentService.refund(PosPaymentIO.RefundRequest.builder()
+                            .originalTransactionId(originalTxnId)
+                            .amount(java.math.BigDecimal.valueOf(amount))
+                            .currency("BGN")
+                            .reason(request.getReason())
+                            .build());
+                    if (!"APPROVED".equalsIgnoreCase(rr.getStatus())) {
+                        throw new RuntimeException("Card refund declined by provider");
+                    }
+                    // store refund txn id on original order
+                    if (original.getPaymentDetails() != null) {
+                        original.getPaymentDetails().setPosRefundTransactionId(rr.getRefundTransactionId());
+                        orderEntityRepository.save(original);
+                    }
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException("POS refund failed: " + ex.getMessage(), ex);
+            }
+        }
+
+        // Mark original as refunded to reflect in UI
+        original.setStatus(in.bushansirgur.billingsoftware.io.OrderStatus.REFUNDED);
+        orderEntityRepository.save(original);
+
+        // Create refund items list (mirror quantities negative for readability)
+        java.util.List<OrderItemEntity> refundItems;
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            java.util.Map<String, Integer> itemIdToQty = request.getItems().stream()
+                    .collect(java.util.stream.Collectors.toMap(in.bushansirgur.billingsoftware.io.OrderRefundRequest.RefundItem::getItemId, in.bushansirgur.billingsoftware.io.OrderRefundRequest.RefundItem::getQuantity));
+            refundItems = original.getItems().stream()
+                    .filter(oi -> itemIdToQty.containsKey(oi.getItemId()))
+                    .map(oi -> OrderItemEntity.builder()
+                            .itemId(oi.getItemId())
+                            .name(oi.getName())
+                            .barcode(oi.getBarcode())
+                            .price(oi.getPrice())
+                            .quantity(-Math.abs(itemIdToQty.get(oi.getItemId())))
+                            .build())
+                    .collect(java.util.stream.Collectors.toList());
+        } else {
+            refundItems = original.getItems().stream()
+                    .map(oi -> OrderItemEntity.builder()
+                            .itemId(oi.getItemId())
+                            .name(oi.getName())
+                            .barcode(oi.getBarcode())
+                            .price(oi.getPrice())
+                            .quantity(-Math.abs(oi.getQuantity()))
+                            .build())
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        // Create a refund order record (mirror) for audit
+        OrderEntity refund = OrderEntity.builder()
+                .customerName(original.getCustomerName())
+                .phoneNumber(original.getPhoneNumber())
+                .subtotal(-Math.abs(original.getSubtotal()))
+                .tax(-Math.abs(original.getTax()))
+                .grandTotal(-Math.abs(request.getRefundAmount() != null ? request.getRefundAmount() : original.getGrandTotal()))
+                .paymentMethod(original.getPaymentMethod())
+                .status(in.bushansirgur.billingsoftware.io.OrderStatus.REFUNDED)
+                .originalOrderId(original.getOrderId())
+                .cashierUsername(org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() != null ? org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName() : original.getCashierUsername())
+                .build();
+
+        refund.setItems(refundItems);
+        refund = orderEntityRepository.save(refund);
+        return convertToResponse(refund);
+    }
+
     private OrderItemEntity convertToOrderItemEntity(OrderRequest.OrderItemRequest orderItemRequest) {
         return OrderItemEntity.builder()
                 .itemId(orderItemRequest.getItemId())
@@ -89,6 +194,8 @@ public class OrderServiceImpl implements OrderService {
                 .grandTotal(newOrder.getGrandTotal())
                 .paymentMethod(newOrder.getPaymentMethod())
                 .cashierUsername(newOrder.getCashierUsername())
+                .orderStatus(newOrder.getStatus())
+                .originalOrderId(newOrder.getOriginalOrderId())
                 .items(newOrder.getItems().stream()
                         .map(this::convertToItemResponse)
                         .collect(Collectors.toList()))

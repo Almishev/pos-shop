@@ -2,6 +2,7 @@ package in.bushansirgur.billingsoftware.controller;
 
 import in.bushansirgur.billingsoftware.io.OrderRequest;
 import in.bushansirgur.billingsoftware.io.OrderResponse;
+import in.bushansirgur.billingsoftware.io.OrderRefundRequest;
 import in.bushansirgur.billingsoftware.service.OrderService;
 import in.bushansirgur.billingsoftware.service.OrderArchiverService;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +59,12 @@ public class OrderController {
             @RequestParam(value = "dateTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate dateTo
     ) {
         return orderService.getOrders(pageable, q, dateFrom, dateTo);
+    }
+
+    @PostMapping("/{orderId}/refund")
+    public OrderResponse refundOrder(@PathVariable String orderId, @RequestBody OrderRefundRequest request) {
+        request.setOrderId(orderId);
+        return orderService.refundOrder(request);
     }
 
     @PostMapping("/archive/run")
