@@ -12,6 +12,8 @@ public interface FiscalReportService {
     
     FiscalReportResponse generateShiftReport(FiscalReportRequest request);
     
+    FiscalReportResponse generateStoreDailyReport(FiscalReportRequest request);
+    
     FiscalReportResponse generateMonthlyReport(FiscalReportRequest request);
     
     FiscalReportResponse generateYearlyReport(FiscalReportRequest request);
@@ -37,4 +39,12 @@ public interface FiscalReportService {
     Double getTotalVATForDate(LocalDate date);
     
     Integer getTotalReceiptsForDate(LocalDate date);
+    
+    // Reset data after reports
+    void resetDataAfterShiftReport(String cashierUsername, LocalDate date);
+    void resetDataAfterStoreDailyReport(LocalDate date);
+    
+    // Send to NAP
+    boolean sendStoreDailyReportToNAP(Long reportId);
+    boolean sendShiftReportToNAP(Long reportId);
 }

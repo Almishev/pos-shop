@@ -42,6 +42,9 @@ public class FiscalDeviceEntity {
     private String location; 
     
     private String notes;
+
+    @Transient
+    private boolean locked; // calculated: true if device has ACTIVE cash drawer session
     
     @PrePersist
     protected void onCreate() {

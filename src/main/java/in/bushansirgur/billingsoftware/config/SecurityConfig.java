@@ -8,7 +8,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -35,7 +34,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
         System.out.println("=== SecurityConfig.securityFilterChain called ===");
-        http.cors(Customizer.withDefaults())
+        System.out.println("Cash drawer endpoints configured:");
+        System.out.println("  - /api/v1.0/cash-drawer/force-end/** -> ADMIN only");
+        System.out.println("  - /api/v1.0/cash-drawer/** -> USER, ADMIN");
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                     // Allow preflight CORS requests without authentication
@@ -51,7 +53,12 @@ public class SecurityConfig {
                             "/items/generate-barcode",
                             "/items/barcode/**",
                             "/items/search",
-                            "/loyalty/**"
+                            "/loyalty/**",
+                            "/api/v1.0/categories",
+                            "/api/v1.0/category",
+                            "/api/v1.0/items",
+                            "/api/v1.0/items/**",
+                            "/api/v1.0/dashboard"
                     ).hasAnyRole("USER", "ADMIN")
                     // Orders - require authenticated USER/ADMIN
                     .requestMatchers("/orders", "/orders/**", "/api/v1.0/orders", "/api/v1.0/orders/**").hasAnyRole("USER", "ADMIN")
@@ -59,12 +66,22 @@ public class SecurityConfig {
                     .requestMatchers(
                             "/admin/fiscal-devices",
                             "/admin/devices/*/status",
-                            "/admin/devices/*/ready"
+                            "/admin/devices/*/ready",
+                            "/api/v1.0/admin/fiscal-devices"
                     ).hasAnyRole("USER", "ADMIN")
                     // Fiscal receipts
                     .requestMatchers("/admin/receipts", "/admin/receipts/**").hasAnyRole("USER", "ADMIN")
-                    // Allow USER to generate shift reports; other fiscal reports stay admin-only
-                    .requestMatchers("/admin/fiscal-reports/shift").hasAnyRole("USER", "ADMIN")
+                    // Force end session - admin only (MUST be before general cash-drawer rule)
+                    .requestMatchers("/api/v1.0/cash-drawer/force-end/**").hasRole("ADMIN")
+                    // Cash drawer control endpoints
+                    .requestMatchers(
+                            "/api/v1.0/cash-drawer/**"
+                    ).hasAnyRole("USER", "ADMIN")
+                    // Allow USER to generate shift reports and view all reports; other fiscal reports stay admin-only
+                    .requestMatchers("/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/api/v1.0/admin/fiscal-reports", "/api/v1.0/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
+                    // Fiscal reports stats for dashboard
+                    .requestMatchers("/admin/fiscal-reports/stats/**").hasAnyRole("USER", "ADMIN")
                     // Label endpoints - simplify: allow without auth to avoid 403 during printing
                     .requestMatchers("/admin/labels/**").permitAll()
                     .requestMatchers("/api/v1.0/admin/labels/**").permitAll()
@@ -72,8 +89,8 @@ public class SecurityConfig {
                     .requestMatchers("/admin/promotions/**").permitAll()
                     .requestMatchers("/api/v1.0/admin/promotions/**").permitAll()
                     .requestMatchers("/items/effective").hasAnyRole("USER", "ADMIN")
-                    // Admin-only endpoints (users, other fiscal reports, inventory)
-                    .requestMatchers("/admin/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
+                    // Admin-only endpoints (users, inventory) - fiscal reports handled above
+                    .requestMatchers("/admin/users/**", "/admin/inventory/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )
@@ -100,7 +117,7 @@ public class SecurityConfig {
 
     private UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        config.setAllowedOrigins(List.of("http://localhost:3001", "http://localhost:5173"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*")); // allow all request headers (Accept, Authorization, Content-Type, etc.)
         config.setExposedHeaders(List.of("Authorization"));

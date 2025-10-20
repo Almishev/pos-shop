@@ -5,6 +5,7 @@ import in.bushansirgur.billingsoftware.entity.FiscalReceiptEntity;
 import in.bushansirgur.billingsoftware.io.FiscalReceiptRequest;
 import in.bushansirgur.billingsoftware.io.FiscalReceiptResponse;
 import in.bushansirgur.billingsoftware.repository.FiscalDeviceRepository;
+import in.bushansirgur.billingsoftware.repository.CashDrawerSessionRepository;
 import in.bushansirgur.billingsoftware.repository.FiscalReceiptRepository;
 import in.bushansirgur.billingsoftware.service.FiscalDeviceService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import java.util.Optional;
 public class FiscalDeviceServiceImpl implements FiscalDeviceService {
     
     private final FiscalDeviceRepository fiscalDeviceRepository;
+    private final CashDrawerSessionRepository cashDrawerSessionRepository;
     private final FiscalReceiptRepository fiscalReceiptRepository;
     
     @Override
@@ -30,6 +32,22 @@ public class FiscalDeviceServiceImpl implements FiscalDeviceService {
         System.out.println("=== FiscalDeviceServiceImpl.getAllDevices called ===");
         try {
             List<FiscalDeviceEntity> devices = fiscalDeviceRepository.findAll();
+            // annotate locked flag based on active sessions
+            for (FiscalDeviceEntity d : devices) {
+                boolean locked = cashDrawerSessionRepository.existsByDeviceSerialNumberAndStatus(
+                        d.getSerialNumber(), in.bushansirgur.billingsoftware.entity.CashDrawerSessionEntity.SessionStatus.ACTIVE);
+                d.setLocked(locked);
+                System.out.println("Device " + d.getSerialNumber() + " - Status: " + d.getStatus() + ", Locked: " + locked);
+                
+                // Debug: проверка на активни сесии за това устройство
+                var activeSessions = cashDrawerSessionRepository.findByDeviceSerialNumberAndStatus(
+                        d.getSerialNumber(), in.bushansirgur.billingsoftware.entity.CashDrawerSessionEntity.SessionStatus.ACTIVE);
+                System.out.println("  Active sessions for " + d.getSerialNumber() + ": " + activeSessions.size());
+                for (var session : activeSessions) {
+                    System.out.println("    Session ID: " + session.getId() + ", Cashier: " + session.getCashierUsername() + 
+                                     ", Status: " + session.getStatus() + ", Date: " + session.getSessionDate());
+                }
+            }
             System.out.println("Repository returned " + devices.size() + " devices");
             for (FiscalDeviceEntity device : devices) {
                 System.out.println("Device from DB: ID=" + device.getId() + 

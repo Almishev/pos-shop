@@ -18,4 +18,7 @@ public class FiscalReportRequest {
     private String cashierName;
     private String deviceSerialNumber;
     private String notes;
+    // Cash drawer control for Z-report
+    private Double cashDrawerStartAmount;
+    private Double cashDrawerEndAmount;
 }

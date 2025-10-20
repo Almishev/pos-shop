@@ -47,7 +47,15 @@ public class FiscalReportEntity {
     @Enumerated(EnumType.STRING)
     private ReportStatus status; 
     
-    private String notes; 
+    private String notes;
+    
+    // Cash drawer control for Z-report
+    private BigDecimal cashDrawerStartAmount;
+    private BigDecimal cashDrawerEndAmount;
+    
+    // Cashier breakdown for store daily reports (JSON format)
+    @Column(columnDefinition = "TEXT")
+    private String cashierBreakdown;
     
     @PrePersist
     protected void onCreate() {
@@ -63,7 +71,8 @@ public class FiscalReportEntity {
         MONTHLY,   
         YEARLY,    
         Z_REPORT,  
-        X_REPORT   
+        X_REPORT,
+        STORE_DAILY  // Общ дневен отчет за целия магазин
     }
     
     public enum ReportStatus {

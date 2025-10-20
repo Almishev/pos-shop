@@ -36,6 +36,22 @@ public class FiscalReportController {
         return ResponseEntity.ok(fiscalReportService.generateShiftReport(request));
     }
     
+    @PostMapping("/z-report")
+    public ResponseEntity<FiscalReportResponse> generateZReport(@RequestBody FiscalReportRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            request.setCashierName(authentication.getName());
+        }
+        // Z-отчет е същото като сменен отчет
+        return ResponseEntity.ok(fiscalReportService.generateShiftReport(request));
+    }
+    
+    @PostMapping("/store-daily")
+    public ResponseEntity<FiscalReportResponse> generateStoreDailyReport(@RequestBody FiscalReportRequest request) {
+        // Общ дневен отчет за целия магазин - само за администратори
+        return ResponseEntity.ok(fiscalReportService.generateStoreDailyReport(request));
+    }
+    
     @PostMapping("/monthly")
     public ResponseEntity<FiscalReportResponse> generateMonthlyReport(@RequestBody FiscalReportRequest request) {
         return ResponseEntity.ok(fiscalReportService.generateMonthlyReport(request));

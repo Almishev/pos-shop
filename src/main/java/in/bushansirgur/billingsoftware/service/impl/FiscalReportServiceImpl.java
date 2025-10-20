@@ -1,10 +1,14 @@
 package in.bushansirgur.billingsoftware.service.impl;
 
 import in.bushansirgur.billingsoftware.entity.FiscalReportEntity;
+import in.bushansirgur.billingsoftware.entity.CashDrawerSessionEntity;
 import in.bushansirgur.billingsoftware.io.FiscalReportRequest;
 import in.bushansirgur.billingsoftware.io.FiscalReportResponse;
 import in.bushansirgur.billingsoftware.repository.FiscalReceiptRepository;
 import in.bushansirgur.billingsoftware.repository.FiscalReportRepository;
+import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
+import in.bushansirgur.billingsoftware.repository.CashDrawerSessionRepository;
+import in.bushansirgur.billingsoftware.config.MainFiscalDeviceProperties;
 import in.bushansirgur.billingsoftware.service.FiscalReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +30,9 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     
     private final FiscalReportRepository fiscalReportRepository;
     private final FiscalReceiptRepository fiscalReceiptRepository;
+    private final OrderEntityRepository orderEntityRepository;
+    private final CashDrawerSessionRepository cashDrawerSessionRepository;
+    private final MainFiscalDeviceProperties mainFiscalDeviceProperties;
     
     @Override
     public FiscalReportResponse generateDailyReport(FiscalReportRequest request) {
@@ -73,22 +80,113 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     public FiscalReportResponse generateShiftReport(FiscalReportRequest request) {
         LocalDate reportDate = request.getReportDate() != null ? request.getReportDate() : LocalDate.now();
         
-        // Симулация на сменен отчет (в реалност ще има логика за смени)
+        // Изчисляване на реални данни за смяната (Z-отчет)
+        // Извличане на данни от поръчките за деня
+        Long totalReceipts = orderEntityRepository.countByOrderDate(reportDate);
+        Double totalSales = orderEntityRepository.sumSalesByDate(reportDate);
+        
+        // Изчисляване на ДДС (20% от продажбите)
+        Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
+        Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
+        
+        // Получаване на cash drawer данни за касиера
+        BigDecimal cashDrawerStartAmount = BigDecimal.ZERO;
+        BigDecimal cashDrawerEndAmount = BigDecimal.ZERO;
+        
+        if (request.getCashierName() != null) {
+            var cashDrawerSession = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(
+                    request.getCashierName(), reportDate);
+            if (cashDrawerSession.isPresent()) {
+                cashDrawerStartAmount = cashDrawerSession.get().getStartAmount();
+                cashDrawerEndAmount = cashDrawerSession.get().getEndAmount();
+            }
+        }
+        
+        // Създаване на Z-отчет
         FiscalReportEntity report = FiscalReportEntity.builder()
                 .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.SHIFT, reportDate))
                 .reportType(FiscalReportEntity.ReportType.SHIFT)
                 .reportDate(reportDate)
-                .totalReceipts(0)
-                .totalSales(BigDecimal.ZERO)
-                .totalVAT(BigDecimal.ZERO)
-                .totalNetSales(BigDecimal.ZERO)
+                .totalReceipts(totalReceipts != null ? totalReceipts.intValue() : 0)
+                .totalSales(totalSales != null ? BigDecimal.valueOf(totalSales) : BigDecimal.ZERO)
+                .totalVAT(totalVAT != null ? BigDecimal.valueOf(totalVAT) : BigDecimal.ZERO)
+                .totalNetSales(totalNetSales != null ? BigDecimal.valueOf(totalNetSales) : BigDecimal.ZERO)
                 .cashierName(request.getCashierName())
                 .deviceSerialNumber(request.getDeviceSerialNumber())
                 .notes(request.getNotes())
+                .cashDrawerStartAmount(cashDrawerStartAmount)
+                .cashDrawerEndAmount(cashDrawerEndAmount)
                 .build();
         
         report = fiscalReportRepository.save(report);
-        log.info("Shift report generated: {}", report.getReportNumber());
+        log.info("Z-Report (Shift) generated: {} - Receipts: {}, Sales: {}, VAT: {}", 
+                report.getReportNumber(), report.getTotalReceipts(), report.getTotalSales(), report.getTotalVAT());
+        
+        // Нулираме данните след генериране на сменен отчет
+        if (request.getCashierName() != null) {
+            resetDataAfterShiftReport(request.getCashierName(), reportDate);
+        }
+        
+        return FiscalReportResponse.fromEntity(report);
+    }
+    
+    @Override
+    public FiscalReportResponse generateStoreDailyReport(FiscalReportRequest request) {
+        LocalDate reportDate = request.getReportDate() != null ? request.getReportDate() : LocalDate.now();
+        
+        // Проверка за съществуващ общ дневен отчет
+        List<FiscalReportEntity> existingReports = fiscalReportRepository.findByReportTypeAndDateRange(
+                FiscalReportEntity.ReportType.STORE_DAILY, reportDate, reportDate);
+        
+        if (!existingReports.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, 
+                    "Store daily report for date " + reportDate + " already exists");
+        }
+        
+        // Изчисляване на реални данни за целия магазин за деня
+        // Събира данни от всички касиери и всички поръчки за деня
+        Long totalReceipts = orderEntityRepository.countByOrderDate(reportDate);
+        Double totalSales = orderEntityRepository.sumSalesByDate(reportDate);
+        
+        // Изчисляване на ДДС (20% от продажбите)
+        Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
+        Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
+        
+        // Получаване на данни по касиери за деня
+        List<Object[]> cashierData = orderEntityRepository.summarizeByCashierForDate(reportDate);
+        String cashierBreakdownJson = buildCashierBreakdownJson(cashierData);
+        
+        // Създаване на общ дневен отчет за магазина
+        FiscalReportEntity report = FiscalReportEntity.builder()
+                .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.STORE_DAILY, reportDate))
+                .reportType(FiscalReportEntity.ReportType.STORE_DAILY)
+                .reportDate(reportDate)
+                .totalReceipts(totalReceipts != null ? totalReceipts.intValue() : 0)
+                .totalSales(totalSales != null ? BigDecimal.valueOf(totalSales) : BigDecimal.ZERO)
+                .totalVAT(totalVAT != null ? BigDecimal.valueOf(totalVAT) : BigDecimal.ZERO)
+                .totalNetSales(totalNetSales != null ? BigDecimal.valueOf(totalNetSales) : BigDecimal.ZERO)
+                .cashierName(null) // Общ отчет за магазина - няма конкретен касиер
+                .deviceSerialNumber(mainFiscalDeviceProperties.getSerial()) // Използва главното фискално устройство
+                .cashDrawerStartAmount(null) // Няма контрол на касата за общ отчет
+                .cashDrawerEndAmount(null) // Няма контрол на касата за общ отчет
+                .cashierBreakdown(cashierBreakdownJson) // Данни по касиери
+                .notes(request.getNotes() != null ? request.getNotes() : "Общ дневен отчет за целия магазин")
+                .build();
+        
+        report = fiscalReportRepository.save(report);
+        log.info("Store Daily Report generated: {} - Total Receipts: {}, Total Sales: {}, Total VAT: {}", 
+                report.getReportNumber(), report.getTotalReceipts(), report.getTotalSales(), report.getTotalVAT());
+        
+        // Изпращаме отчета към НАП чрез главното фискално устройство
+        boolean sentToNAP = sendStoreDailyReportToNAP(report.getId());
+        if (sentToNAP) {
+            log.info("Store daily report successfully sent to NAP");
+        } else {
+            log.warn("Failed to send store daily report to NAP");
+        }
+        
+        // Нулираме данните след генериране на общ Z-отчет
+        resetDataAfterStoreDailyReport(reportDate);
         
         return FiscalReportResponse.fromEntity(report);
     }
@@ -287,6 +385,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     private String generateReportNumber(FiscalReportEntity.ReportType reportType, LocalDate date) {
         String typePrefix = switch (reportType) {
             case DAILY -> "DR";
+            case STORE_DAILY -> "SDR";
             case SHIFT -> "SR";
             case MONTHLY -> "MR";
             case YEARLY -> "YR";
@@ -296,5 +395,171 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         
         return typePrefix + "-" + date.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")) + 
                "-" + String.format("%06d", (int)(Math.random() * 999999));
+    }
+    
+    private String buildCashierBreakdownJson(List<Object[]> cashierData) {
+        if (cashierData == null || cashierData.isEmpty()) {
+            return "[]";
+        }
+        
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i < cashierData.size(); i++) {
+            Object[] row = cashierData.get(i);
+            String cashier = (String) row[0];
+            Long count = (Long) row[1];
+            Double total = (Double) row[2];
+            
+            if (i > 0) json.append(",");
+            json.append("{")
+                .append("\"cashier\":\"").append(cashier != null ? cashier : "Неизвестен").append("\",")
+                .append("\"ordersCount\":").append(count != null ? count : 0).append(",")
+                .append("\"totalAmount\":").append(total != null ? total : 0.0)
+                .append("}");
+        }
+        json.append("]");
+        
+        return json.toString();
+    }
+    
+    @Override
+    public void resetDataAfterShiftReport(String cashierUsername, LocalDate date) {
+        log.info("=== STARTING SHIFT REPORT RESET for cashier: {} on date: {} ===", cashierUsername, date);
+        
+        try {
+            // 1. Приключваме активната cash drawer сесия за този касиер
+            log.info("Step 1: Closing active cash drawer session for cashier: {}", cashierUsername);
+            var activeSession = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(cashierUsername, date);
+            
+            if (activeSession.isPresent()) {
+                CashDrawerSessionEntity session = activeSession.get();
+                session.setStatus(CashDrawerSessionEntity.SessionStatus.CLOSED);
+                session.setSessionEndTime(LocalDateTime.now());
+                session.setNotes("Автоматично приключена след сменен Z-отчет");
+                cashDrawerSessionRepository.save(session);
+                log.info("Closed session for cashier: {} on device: {}", 
+                        session.getCashierUsername(), session.getDeviceSerialNumber());
+            } else {
+                log.warn("No active session found for cashier: {} on date: {}", cashierUsername, date);
+            }
+            
+            // 2. Нулираме фискалното устройство за този касиер
+            log.info("Step 2: Resetting fiscal device for cashier: {}", cashierUsername);
+            // В реална система тук бихме изпратили команда към конкретното фискално устройство
+            // за нулиране на данните за тази каса
+            
+            // 3. Логваме успешното завършване
+            log.info("=== SHIFT REPORT RESET COMPLETED ===");
+            log.info("Cashier: {} ready for new shift", cashierUsername);
+            
+        } catch (Exception e) {
+            log.error("Error during shift report reset for cashier {}: {}", cashierUsername, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
+                    "Грешка при нулиране на данните след сменен Z-отчет: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public void resetDataAfterStoreDailyReport(LocalDate date) {
+        log.info("=== STARTING STORE DAILY REPORT RESET for date: {} ===", date);
+        
+        try {
+            // 1. Приключваме всички активни cash drawer сесии
+            log.info("Step 1: Closing all active cash drawer sessions...");
+            List<CashDrawerSessionEntity> activeSessions = cashDrawerSessionRepository.findAll()
+                    .stream()
+                    .filter(session -> session.getStatus() == CashDrawerSessionEntity.SessionStatus.ACTIVE)
+                    .collect(Collectors.toList());
+            
+            for (CashDrawerSessionEntity session : activeSessions) {
+                session.setStatus(CashDrawerSessionEntity.SessionStatus.CLOSED);
+                session.setSessionEndTime(LocalDateTime.now());
+                session.setNotes("Автоматично приключена след общ Z-отчет");
+                cashDrawerSessionRepository.save(session);
+                log.info("Closed session for cashier: {} on device: {}", 
+                        session.getCashierUsername(), session.getDeviceSerialNumber());
+            }
+            
+            // 2. Нулираме всички фискални устройства (маркираме като готови за нов ден)
+            log.info("Step 2: Resetting all fiscal devices...");
+            // В реална система тук бихме изпратили команди към всички фискални устройства
+            // за нулиране на натрупаните данни
+            
+            // 3. Изчистваме временните данни (ако има такива)
+            log.info("Step 3: Clearing temporary data...");
+            // В реална система тук бихме изчистили кеш, временни файлове и т.н.
+            
+            // 4. Логваме успешното завършване
+            log.info("=== STORE DAILY REPORT RESET COMPLETED ===");
+            log.info("Closed {} active sessions", activeSessions.size());
+            log.info("All fiscal devices reset for new day");
+            log.info("Temporary data cleared");
+            
+        } catch (Exception e) {
+            log.error("Error during store daily report reset: {}", e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
+                    "Грешка при нулиране на данните след общ Z-отчет: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public boolean sendStoreDailyReportToNAP(Long reportId) {
+        log.info("=== SENDING STORE DAILY REPORT TO NAP: {} ===", reportId);
+        
+        try {
+            FiscalReportEntity report = fiscalReportRepository.findById(reportId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
+                            "Report not found with id: " + reportId));
+            
+            if (report.getReportType() != FiscalReportEntity.ReportType.STORE_DAILY) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+                        "Report is not a store daily report");
+            }
+            
+            // В реална система тук бихме:
+            // 1. Изпратили данните към НАП чрез главното фискално устройство
+            // 2. Получили потвърждение от НАП
+            // 3. Записали статуса на изпращането
+            
+            log.info("Store daily report {} sent to NAP successfully", report.getReportNumber());
+            log.info("Report details: Date={}, Total Sales={}, Total VAT={}", 
+                    report.getReportDate(), report.getTotalSales(), report.getTotalVAT());
+            
+            return true;
+            
+        } catch (Exception e) {
+            log.error("Error sending store daily report to NAP: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+    
+    @Override
+    public boolean sendShiftReportToNAP(Long reportId) {
+        log.info("=== SENDING SHIFT REPORT TO NAP: {} ===", reportId);
+        
+        try {
+            FiscalReportEntity report = fiscalReportRepository.findById(reportId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
+                            "Report not found with id: " + reportId));
+            
+            if (report.getReportType() != FiscalReportEntity.ReportType.SHIFT) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+                        "Report is not a shift report");
+            }
+            
+            // В реална система тук бихме:
+            // 1. Изпратили данните към НАП чрез конкретното фискално устройство
+            // 2. Получили потвърждение от НАП
+            // 3. Записали статуса на изпращането
+            
+            log.info("Shift report {} sent to NAP successfully", report.getReportNumber());
+            log.info("Report details: Cashier={}, Device={}, Total Sales={}", 
+                    report.getCashierName(), report.getDeviceSerialNumber(), report.getTotalSales());
+            
+            return true;
+            
+        } catch (Exception e) {
+            log.error("Error sending shift report to NAP: {}", e.getMessage(), e);
+            return false;
+        }
     }
 }

@@ -38,5 +38,8 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
 
     @Query("SELECT o.cashierUsername as cashier, COUNT(o) as cnt, COALESCE(SUM(o.grandTotal),0) as total FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to GROUP BY o.cashierUsername")
     List<Object[]> summarizeByCashier(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+    
+    @Query("SELECT o.cashierUsername as cashier, COUNT(o) as cnt, COALESCE(SUM(o.grandTotal),0) as total FROM OrderEntity o WHERE DATE(o.createdAt) = :date GROUP BY o.cashierUsername ORDER BY total DESC")
+    List<Object[]> summarizeByCashierForDate(@Param("date") LocalDate date);
 
 }
