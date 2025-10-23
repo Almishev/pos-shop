@@ -42,7 +42,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                     // Allow preflight CORS requests without authentication
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                    .requestMatchers("/login","encode").permitAll()
+                    .requestMatchers("/login","/api/v1.0/login","encode").permitAll()
+                    .requestMatchers("/health","/api/v1.0/health").permitAll()
                     .requestMatchers("/uploads/**", "/api/v1.0/uploads/**").permitAll()
                     // Allow authenticated users (USER, ADMIN) to access common app resources
                     .requestMatchers(
@@ -117,7 +118,7 @@ public class SecurityConfig {
 
     private UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3001", "http://localhost:5173"));
+        config.setAllowedOrigins(List.of("http://localhost:3001", "http://localhost:5173", "http://192.168.80.101:3001"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*")); // allow all request headers (Accept, Authorization, Content-Type, etc.)
         config.setExposedHeaders(List.of("Authorization"));
