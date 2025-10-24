@@ -20,7 +20,13 @@ target/
 *.ipr
 
 # Ignore application properties with sensitive data
- src/main/resources/application.properties
+# src/main/resources/application.properties
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/
