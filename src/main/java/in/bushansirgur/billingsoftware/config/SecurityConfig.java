@@ -20,8 +20,10 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -30,6 +32,9 @@ public class SecurityConfig {
 
     private final AppUserDetailsService appUserDetailsService;
     private final JwtRequestFilter jwtRequestFilter;
+    
+    @Value("${ALLOWED_ORIGINS:http://localhost:3001,http://localhost:5173}")
+    private String allowedOrigins;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
@@ -118,7 +123,9 @@ public class SecurityConfig {
 
     private UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3001", "http://localhost:5173", "http://192.168.80.101:3001"));
+        // Parse allowed origins from environment variable
+        List<String> origins = Arrays.asList(allowedOrigins.split(","));
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*")); // allow all request headers (Accept, Authorization, Content-Type, etc.)
         config.setExposedHeaders(List.of("Authorization"));
