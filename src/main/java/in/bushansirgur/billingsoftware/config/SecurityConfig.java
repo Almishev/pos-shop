@@ -35,7 +35,6 @@ public class SecurityConfig {
     
     @Value("${ALLOWED_ORIGINS:http://localhost:3001,http://localhost:5173}")
     private String allowedOrigins;
-
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
         System.out.println("=== SecurityConfig.securityFilterChain called ===");
@@ -95,8 +94,8 @@ public class SecurityConfig {
                     .requestMatchers("/admin/promotions/**").permitAll()
                     .requestMatchers("/api/v1.0/admin/promotions/**").permitAll()
                     .requestMatchers("/items/effective").hasAnyRole("USER", "ADMIN")
-                    // Admin-only endpoints (users, inventory) - fiscal reports handled above
-                    .requestMatchers("/admin/users/**", "/admin/inventory/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
+                    // Admin-only endpoints (users, inventory, categories) - fiscal reports handled above
+                    .requestMatchers("/admin/users/**", "/admin/inventory/**", "/admin/categories/**", "/api/v1.0/admin/categories/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )
