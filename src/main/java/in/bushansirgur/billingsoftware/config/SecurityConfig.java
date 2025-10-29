@@ -97,6 +97,8 @@ public class SecurityConfig {
                     // Admin-only endpoints (users, inventory, categories) - fiscal reports handled above
                     .requestMatchers("/admin/users/**", "/admin/inventory/**", "/admin/categories/**", "/api/v1.0/admin/categories/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
+                    // POS card payments endpoints
+                    .requestMatchers("/pos-payments/**", "/api/v1.0/pos-payments/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
