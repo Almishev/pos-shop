@@ -40,4 +40,15 @@ public interface CashDrawerSessionRepository extends JpaRepository<CashDrawerSes
     // Debug метод за проверка на активни сесии
     @Query("SELECT c FROM CashDrawerSessionEntity c WHERE c.deviceSerialNumber = :deviceSerialNumber AND c.status = :status")
     List<CashDrawerSessionEntity> findByDeviceSerialNumberAndStatus(@Param("deviceSerialNumber") String deviceSerialNumber, @Param("status") CashDrawerSessionEntity.SessionStatus status);
+
+    // Намери активна сесия по устройство и дата
+    @Query("SELECT c FROM CashDrawerSessionEntity c WHERE c.deviceSerialNumber = :deviceSerialNumber " +
+           "AND c.sessionDate = :date AND c.status = 'ACTIVE'")
+    Optional<CashDrawerSessionEntity> findActiveSessionByDeviceAndDate(
+            @Param("deviceSerialNumber") String deviceSerialNumber,
+            @Param("date") LocalDate date);
+
+    // Всички активни сесии за даден касиер (без значение датата)
+    @Query("SELECT c FROM CashDrawerSessionEntity c WHERE c.cashierUsername = :cashierUsername AND c.status = 'ACTIVE'")
+    List<CashDrawerSessionEntity> findActiveSessionsByCashier(@Param("cashierUsername") String cashierUsername);
 }

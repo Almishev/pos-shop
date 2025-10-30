@@ -8,6 +8,7 @@ import in.bushansirgur.billingsoftware.repository.FiscalReceiptRepository;
 import in.bushansirgur.billingsoftware.repository.FiscalReportRepository;
 import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
 import in.bushansirgur.billingsoftware.repository.CashDrawerSessionRepository;
+import in.bushansirgur.billingsoftware.repository.UserRepository;
 import in.bushansirgur.billingsoftware.config.MainFiscalDeviceProperties;
 import in.bushansirgur.billingsoftware.service.FiscalReportService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     private final FiscalReceiptRepository fiscalReceiptRepository;
     private final OrderEntityRepository orderEntityRepository;
     private final CashDrawerSessionRepository cashDrawerSessionRepository;
+    private final UserRepository userRepository;
     private final MainFiscalDeviceProperties mainFiscalDeviceProperties;
     
     @Override
@@ -80,10 +82,142 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     public FiscalReportResponse generateShiftReport(FiscalReportRequest request) {
         LocalDate reportDate = request.getReportDate() != null ? request.getReportDate() : LocalDate.now();
         
-        // Изчисляване на реални данни за смяната (Z-отчет)
-        // Извличане на данни от поръчките за деня
-        Long totalReceipts = orderEntityRepository.countByOrderDate(reportDate);
-        Double totalSales = orderEntityRepository.sumSalesByDate(reportDate);
+        // Изчисляване на реални данни за смяната (Z-отчет) – само за текущия касиер и в рамките на активната му сесия
+        Long totalReceipts = 0L;
+        Double totalSales = 0.0;
+
+        LocalDateTime sessionFrom = reportDate.atStartOfDay();
+        LocalDateTime sessionTo = reportDate.atTime(LocalTime.MAX);
+
+        // Определи прозорец на смяната от активната cash drawer сесия
+        String aggUsername = null; // обикновено имейл (username)
+        String displayName = null; // показвано име (например "Petq")
+        String cashierName = null; // име, с което се записва в OrderEntity.cashier
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()) {
+                aggUsername = auth.getName();
+            }
+        } catch (Exception ignore) {}
+
+        // опитай да вземеш displayName от БД спрямо имейла (aggUsername)
+        if (aggUsername != null) {
+            try {
+                var u = userRepository.findByEmail(aggUsername).orElse(null);
+                if (u != null && u.getName() != null && !u.getName().isBlank()) {
+                    displayName = u.getName();
+                    cashierName = u.getName();
+                } else if (u != null) {
+                    cashierName = aggUsername; // fallback
+                } else {
+                    // последен опит: обходи потребителите и намери username/email съвпадение
+                    final String userKey = aggUsername;
+                    var match = userRepository.findAll().stream()
+                            .filter(x -> userKey.equalsIgnoreCase(x.getEmail()) ||
+                                    (x.getName() != null && userKey.equalsIgnoreCase(x.getName())))
+                            .findFirst().orElse(null);
+                    if (match != null) {
+                        displayName = match.getName();
+                        cashierName = match.getName() != null && !match.getName().isBlank() ? match.getName() : aggUsername;
+                    } else {
+                        cashierName = aggUsername;
+                    }
+                }
+            } catch (Exception ignore) {}
+        }
+        if (cashierName == null) cashierName = aggUsername;
+
+        log.info("Shift report debug -> cashier username: {}", aggUsername);
+        log.info("Shift report debug -> display name: {}", displayName);
+        log.info("Shift report -> authenticated as '{}', cashierName used for query: '{}'", aggUsername, cashierName);
+
+        String resolvedSessionCashier = null;
+        if (aggUsername != null) {
+            // опитай сесия първо по имейл, после по име
+            var sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(aggUsername, reportDate);
+            if (sessionOpt.isEmpty() && displayName != null) {
+                sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(displayName, reportDate);
+            }
+            // опитай още: ако е подадено устройство в заявката – вземи активната сесия по устройство за днешна дата
+            if (sessionOpt.isEmpty() && request.getDeviceSerialNumber() != null) {
+                var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(request.getDeviceSerialNumber(), reportDate);
+                if (byDevice.isPresent()) {
+                    sessionOpt = byDevice;
+                    // ако сесията е на друг ключ (например email), използвай точно този ключ
+                    String sessionCashier = byDevice.get().getCashierUsername();
+                    if (sessionCashier != null && !sessionCashier.isBlank()) {
+                        // Използвай ключа от сесията за заявки, но не презаписвай display името
+                        // за да можем да агрегираме и по име, и по имейл при нужда
+                        aggUsername = sessionCashier;
+                        if (cashierName == null || cashierName.isBlank()) {
+                            cashierName = sessionCashier;
+                        }
+                        resolvedSessionCashier = sessionCashier;
+                        log.info("Shift report debug -> overridden keys from device session, sessionCashier='{}'", sessionCashier);
+                    }
+                }
+            }
+            if (sessionOpt.isPresent()) {
+                var s = sessionOpt.get();
+                if (s.getSessionStartTime() != null) sessionFrom = s.getSessionStartTime();
+                if (s.getSessionEndTime() != null) sessionTo = s.getSessionEndTime();
+            }
+            log.info("Shift report debug -> session from: {} to {}", sessionFrom, sessionTo);
+
+            // сумирай по двата възможни ключа: email (aggUsername) и display name (cashierName)
+            final String emailKey = aggUsername;
+            final String nameKey = cashierName;
+
+            long cntEmail = orderEntityRepository.countByCashierBetween(emailKey, sessionFrom, sessionTo);
+            Double sumEmail = orderEntityRepository.sumSalesByCashierBetween(emailKey, sessionFrom, sessionTo);
+            log.info("Shift report debug -> emailKey='{}' cnt={}, sum={}", emailKey, cntEmail, sumEmail);
+
+            long cntName = 0L; Double sumName = 0.0;
+            if (nameKey != null && !nameKey.equalsIgnoreCase(emailKey)) {
+                cntName = orderEntityRepository.countByCashierBetween(nameKey, sessionFrom, sessionTo);
+                Double s = orderEntityRepository.sumSalesByCashierBetween(nameKey, sessionFrom, sessionTo);
+                sumName = s != null ? s : 0.0;
+                log.info("Shift report debug -> nameKey='{}' cnt={}, sum={}", nameKey, cntName, sumName);
+            }
+
+            totalReceipts = cntEmail + cntName;
+            totalSales = (sumEmail != null ? sumEmail : 0.0) + (sumName != null ? sumName : 0.0);
+            log.info("Shift report debug -> totalReceipts={}, totalSales={}", totalReceipts, totalSales);
+        } else {
+            // fallback: опитай да определиш касиера от подаденото име
+            String resolved = null;
+            String altName = null;
+            if (request.getCashierName() != null) {
+                try {
+                    var u = userRepository.findByEmail(request.getCashierName()).orElse(null);
+                    if (u == null) {
+                        // ако е лично име, опитай да го намериш по name
+                        u = userRepository.findAll().stream()
+                                .filter(x -> request.getCashierName().equalsIgnoreCase(x.getName()))
+                                .findFirst().orElse(null);
+                    }
+                    if (u != null) {
+                        resolved = u.getEmail();
+                        altName = u.getName();
+                    }
+                } catch (Exception ignore) {}
+            }
+            if (resolved != null) {
+                String key = (altName != null && !altName.isBlank()) ? altName : resolved;
+                totalReceipts = orderEntityRepository.countByCashierBetween(key, sessionFrom, sessionTo);
+                Double sum = orderEntityRepository.sumSalesByCashierBetween(key, sessionFrom, sessionTo);
+                totalSales = sum != null ? sum : 0.0;
+                log.info("Shift report debug (fallback) -> cashier key: {}", key);
+                log.info("Shift report debug -> session from: {} to {}", sessionFrom, sessionTo);
+                log.info("Shift report debug -> totalReceipts={}, totalSales={}", totalReceipts, totalSales);
+            } else {
+                // последен fallback: по дата
+                totalReceipts = orderEntityRepository.countByOrderDate(reportDate);
+                Double sum = orderEntityRepository.sumSalesByDate(reportDate);
+                totalSales = sum != null ? sum : 0.0;
+            }
+        }
         
         // Изчисляване на ДДС (20% от продажбите)
         Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
@@ -93,16 +227,49 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         BigDecimal cashDrawerStartAmount = BigDecimal.ZERO;
         BigDecimal cashDrawerEndAmount = BigDecimal.ZERO;
         
-        if (request.getCashierName() != null) {
-            var cashDrawerSession = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(
-                    request.getCashierName(), reportDate);
+        // За намиране на активната сесия използваме сигурното потребителско име от SecurityContext (обикновено имейл)
+        // а за показване в отчета оставяме display името от request
+        String sessionUsername = request.getCashierName();
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()) {
+                sessionUsername = auth.getName();
+            }
+        } catch (Exception ignore) {}
+        // Ако преди това сме резолвнали касиера от активна сесия по устройство, използвай този ключ за затваряне
+        if (resolvedSessionCashier != null) sessionUsername = resolvedSessionCashier;
+        
+        if (sessionUsername != null) {
+            var cashDrawerSession = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(sessionUsername, reportDate);
+            if (cashDrawerSession.isEmpty()) {
+                // ако активната сесия е от предишен ден, вземи я игнорирайки датата
+                var sessions = cashDrawerSessionRepository.findActiveSessionsByCashier(sessionUsername);
+                if (!sessions.isEmpty()) {
+                    // wrap първата намерена активна сесия като Optional
+                    cashDrawerSession = java.util.Optional.of(sessions.get(0));
+                }
+            }
             if (cashDrawerSession.isPresent()) {
-                cashDrawerStartAmount = cashDrawerSession.get().getStartAmount();
-                cashDrawerEndAmount = cashDrawerSession.get().getEndAmount();
+                var s = cashDrawerSession.get();
+                if (s.getStartAmount() != null) cashDrawerStartAmount = s.getStartAmount();
+                if (request.getCashDrawerEndAmount() != null) {
+                    cashDrawerEndAmount = BigDecimal.valueOf(request.getCashDrawerEndAmount());
+                } else if (s.getEndAmount() != null) {
+                    cashDrawerEndAmount = s.getEndAmount();
+                }
+            } else {
+                if (request.getCashDrawerStartAmount() != null) {
+                    cashDrawerStartAmount = BigDecimal.valueOf(request.getCashDrawerStartAmount());
+                }
+                if (request.getCashDrawerEndAmount() != null) {
+                    cashDrawerEndAmount = BigDecimal.valueOf(request.getCashDrawerEndAmount());
+                }
             }
         }
         
         // Създаване на Z-отчет
+        String paymentBreakdownJson = buildPaymentBreakdownJson(sessionFrom, sessionTo, aggUsername, cashierName);
         FiscalReportEntity report = FiscalReportEntity.builder()
                 .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.SHIFT, reportDate))
                 .reportType(FiscalReportEntity.ReportType.SHIFT)
@@ -116,18 +283,121 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .notes(request.getNotes())
                 .cashDrawerStartAmount(cashDrawerStartAmount)
                 .cashDrawerEndAmount(cashDrawerEndAmount)
+                .paymentBreakdown(paymentBreakdownJson)
                 .build();
         
         report = fiscalReportRepository.save(report);
         log.info("Z-Report (Shift) generated: {} - Receipts: {}, Sales: {}, VAT: {}", 
                 report.getReportNumber(), report.getTotalReceipts(), report.getTotalSales(), report.getTotalVAT());
         
-        // Нулираме данните след генериране на сменен отчет
-        if (request.getCashierName() != null) {
-            resetDataAfterShiftReport(request.getCashierName(), reportDate);
+        // Нулираме данните след генериране на сменен отчет – използваме username от SecurityContext
+        if (sessionUsername != null) {
+            resetDataAfterShiftReport(sessionUsername, reportDate);
         }
         
+        // Автоматично изчисляване на крайна сума в касата (начална + всички плащания в брой), ако липсва
+        if (cashDrawerEndAmount == null || BigDecimal.ZERO.compareTo(cashDrawerEndAmount) == 0) {
+            try {
+                double cashOnly = safeSum(aggUsername, cashierName, sessionFrom, sessionTo, in.bushansirgur.billingsoftware.io.PaymentMethod.CASH);
+                double splitCash = safeSplitCash(aggUsername, cashierName, sessionFrom, sessionTo);
+                BigDecimal calc = (cashDrawerStartAmount != null ? cashDrawerStartAmount : BigDecimal.ZERO)
+                        .add(BigDecimal.valueOf(cashOnly + splitCash));
+                cashDrawerEndAmount = calc;
+            } catch (Exception ignore) {}
+        }
+
+        // Увери се, че записваме изчислената крайна сума в отчета и я връщаме
+        try {
+            report.setCashDrawerEndAmount(cashDrawerEndAmount);
+            report = fiscalReportRepository.save(report);
+        } catch (Exception e) {
+            log.warn("Unable to persist auto-calculated cash drawer end amount: {}", e.getMessage());
+        }
+
         return FiscalReportResponse.fromEntity(report);
+    }
+
+    private String buildPaymentBreakdownJson(LocalDateTime from, LocalDateTime to, String emailKey, String nameKey) {
+        try {
+            String key = (nameKey != null && !nameKey.isBlank()) ? nameKey : emailKey;
+            if (key == null) return null;
+
+            var CASH = in.bushansirgur.billingsoftware.io.PaymentMethod.CASH;
+            var CARD = in.bushansirgur.billingsoftware.io.PaymentMethod.CARD;
+            var SPLIT = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT;
+
+            long cashCnt = safeCount(emailKey, nameKey, from, to, CASH);
+            double cashSum = safeSum(emailKey, nameKey, from, to, CASH);
+
+            long cardCnt = safeCount(emailKey, nameKey, from, to, CARD);
+            double cardSum = safeSum(emailKey, nameKey, from, to, CARD);
+
+            long splitCnt = safeCount(emailKey, nameKey, from, to, SPLIT);
+            double splitSum = safeSum(emailKey, nameKey, from, to, SPLIT);
+            double splitCash = safeSplitCash(emailKey, nameKey, from, to);
+            double splitCard = safeSplitCard(emailKey, nameKey, from, to);
+
+            String json = "{" +
+                    "\"CASH\":{\"count\":"+cashCnt+",\"total\":"+cashSum+"}," +
+                    "\"CARD\":{\"count\":"+cardCnt+",\"total\":"+cardSum+"}," +
+                    "\"SPLIT\":{\"count\":"+splitCnt+",\"total\":"+splitSum+",\"cash\":"+splitCash+",\"card\":"+splitCard+"}" +
+                    "}";
+            return json;
+        } catch (Exception e) {
+            log.warn("Failed to build payment breakdown json: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private long safeCount(String emailKey, String nameKey, LocalDateTime from, LocalDateTime to, in.bushansirgur.billingsoftware.io.PaymentMethod method) {
+        long cntEmail = 0L;
+        long cntName = 0L;
+        if (emailKey != null) cntEmail = orderEntityRepository.countByCashierBetweenAndMethod(emailKey, method, from, to);
+        if (nameKey != null && (emailKey == null || !nameKey.equalsIgnoreCase(emailKey)))
+            cntName = orderEntityRepository.countByCashierBetweenAndMethod(nameKey, method, from, to);
+        return cntEmail + cntName;
+    }
+
+    private double safeSum(String emailKey, String nameKey, LocalDateTime from, LocalDateTime to, in.bushansirgur.billingsoftware.io.PaymentMethod method) {
+        double sumEmail = 0.0;
+        double sumName = 0.0;
+        if (emailKey != null) {
+            Double v = orderEntityRepository.sumGrandByCashierBetweenAndMethod(emailKey, method, from, to);
+            if (v != null) sumEmail = v;
+        }
+        if (nameKey != null && (emailKey == null || !nameKey.equalsIgnoreCase(emailKey))) {
+            Double v = orderEntityRepository.sumGrandByCashierBetweenAndMethod(nameKey, method, from, to);
+            if (v != null) sumName = v;
+        }
+        return sumEmail + sumName;
+    }
+
+    private double safeSplitCash(String emailKey, String nameKey, LocalDateTime from, LocalDateTime to) {
+        double sumEmail = 0.0;
+        double sumName = 0.0;
+        if (emailKey != null) {
+            Double v = orderEntityRepository.sumSplitCashByCashierBetween(emailKey, from, to);
+            if (v != null) sumEmail = v;
+        }
+        if (nameKey != null && (emailKey == null || !nameKey.equalsIgnoreCase(emailKey))) {
+            Double v = orderEntityRepository.sumSplitCashByCashierBetween(nameKey, from, to);
+            if (v != null) sumName = v;
+        }
+        return sumEmail + sumName;
+    }
+
+    private double safeSplitCard(String emailKey, String nameKey, LocalDateTime from, LocalDateTime to) {
+        double sumEmail = 0.0;
+        double sumName = 0.0;
+        if (emailKey != null) {
+            Double v = orderEntityRepository.sumSplitCardByCashierBetween(emailKey, from, to);
+            if (v != null) sumEmail = v;
+        }
+        if (nameKey != null && (emailKey == null || !nameKey.equalsIgnoreCase(emailKey))) {
+            Double v = orderEntityRepository.sumSplitCardByCashierBetween(nameKey, from, to);
+            if (v != null) sumName = v;
+        }
+        return sumEmail + sumName;
     }
     
     @Override
@@ -426,20 +696,20 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         log.info("=== STARTING SHIFT REPORT RESET for cashier: {} on date: {} ===", cashierUsername, date);
         
         try {
-            // 1. Приключваме активната cash drawer сесия за този касиер
-            log.info("Step 1: Closing active cash drawer session for cashier: {}", cashierUsername);
-            var activeSession = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(cashierUsername, date);
-            
-            if (activeSession.isPresent()) {
-                CashDrawerSessionEntity session = activeSession.get();
+            // 1. Приключваме всички активни сесии за този касиер (без оглед на датата)
+            log.info("Step 1: Closing active cash drawer sessions for cashier: {}", cashierUsername);
+            var activeSessions = cashDrawerSessionRepository.findActiveSessionsByCashier(cashierUsername);
+            if (activeSessions.isEmpty()) {
+                // fallback и по дата (старото поведение)
+                var byDate = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(cashierUsername, date);
+                byDate.ifPresent(s -> activeSessions.add(s));
+            }
+            for (CashDrawerSessionEntity session : activeSessions) {
                 session.setStatus(CashDrawerSessionEntity.SessionStatus.CLOSED);
                 session.setSessionEndTime(LocalDateTime.now());
                 session.setNotes("Автоматично приключена след сменен Z-отчет");
                 cashDrawerSessionRepository.save(session);
-                log.info("Closed session for cashier: {} on device: {}", 
-                        session.getCashierUsername(), session.getDeviceSerialNumber());
-            } else {
-                log.warn("No active session found for cashier: {} on date: {}", cashierUsername, date);
+                log.info("Closed session for cashier: {} on device: {}", session.getCashierUsername(), session.getDeviceSerialNumber());
             }
             
             // 2. Нулираме фискалното устройство за този касиер

@@ -56,6 +56,10 @@ public class FiscalReportEntity {
     // Cashier breakdown for store daily reports (JSON format)
     @Column(columnDefinition = "TEXT")
     private String cashierBreakdown;
+
+    // Payment method breakdown for shift reports (JSON)
+    @Column(columnDefinition = "TEXT")
+    private String paymentBreakdown;
     
     @PrePersist
     protected void onCreate() {

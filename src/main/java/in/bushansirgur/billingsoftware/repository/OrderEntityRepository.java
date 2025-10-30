@@ -42,4 +42,39 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
     @Query("SELECT o.cashierUsername as cashier, COUNT(o) as cnt, COALESCE(SUM(o.grandTotal),0) as total FROM OrderEntity o WHERE DATE(o.createdAt) = :date GROUP BY o.cashierUsername ORDER BY total DESC")
     List<Object[]> summarizeByCashierForDate(@Param("date") LocalDate date);
 
+    // Shift-specific aggregates for a given cashier within a session window
+    @Query("SELECT COALESCE(SUM(o.grandTotal),0) FROM OrderEntity o WHERE o.cashierUsername = :cashier AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumSalesByCashierBetween(@Param("cashier") String cashier,
+                                    @Param("from") LocalDateTime from,
+                                    @Param("to") LocalDateTime to);
+
+    @Query("SELECT COUNT(o) FROM OrderEntity o WHERE o.cashierUsername = :cashier AND o.createdAt >= :from AND o.createdAt <= :to")
+    Long countByCashierBetween(@Param("cashier") String cashier,
+                               @Param("from") LocalDateTime from,
+                               @Param("to") LocalDateTime to);
+
+    // Breakdown by payment method within session window for given cashier
+    @Query("SELECT COUNT(o) FROM OrderEntity o WHERE o.cashierUsername = :cashier AND o.paymentMethod = :method AND o.createdAt >= :from AND o.createdAt <= :to")
+    Long countByCashierBetweenAndMethod(@Param("cashier") String cashier,
+                                        @Param("method") in.bushansirgur.billingsoftware.io.PaymentMethod method,
+                                        @Param("from") LocalDateTime from,
+                                        @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.grandTotal),0) FROM OrderEntity o WHERE o.cashierUsername = :cashier AND o.paymentMethod = :method AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumGrandByCashierBetweenAndMethod(@Param("cashier") String cashier,
+                                             @Param("method") in.bushansirgur.billingsoftware.io.PaymentMethod method,
+                                             @Param("from") LocalDateTime from,
+                                             @Param("to") LocalDateTime to);
+
+    // For SPLIT, also sum the split components
+    @Query("SELECT COALESCE(SUM(o.paymentDetails.cashAmount),0) FROM OrderEntity o WHERE o.cashierUsername = :cashier AND o.paymentMethod = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumSplitCashByCashierBetween(@Param("cashier") String cashier,
+                                        @Param("from") LocalDateTime from,
+                                        @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.paymentDetails.cardAmount),0) FROM OrderEntity o WHERE o.cashierUsername = :cashier AND o.paymentMethod = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumSplitCardByCashierBetween(@Param("cashier") String cashier,
+                                        @Param("from") LocalDateTime from,
+                                        @Param("to") LocalDateTime to);
+
 }

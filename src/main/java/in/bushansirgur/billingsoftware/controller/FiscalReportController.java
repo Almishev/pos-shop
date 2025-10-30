@@ -3,6 +3,7 @@ package in.bushansirgur.billingsoftware.controller;
 import in.bushansirgur.billingsoftware.io.FiscalReportRequest;
 import in.bushansirgur.billingsoftware.io.FiscalReportResponse;
 import in.bushansirgur.billingsoftware.service.FiscalReportService;
+import in.bushansirgur.billingsoftware.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.Authentication;
@@ -20,6 +21,7 @@ import java.util.List;
 public class FiscalReportController {
     
     private final FiscalReportService fiscalReportService;
+    private final UserRepository userRepository;
     
     // Генериране на отчети
     @PostMapping("/daily")
@@ -31,7 +33,16 @@ public class FiscalReportController {
     public ResponseEntity<FiscalReportResponse> generateShiftReport(@RequestBody FiscalReportRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
-            request.setCashierName(authentication.getName());
+            String username = authentication.getName();
+            try {
+                var user = userRepository.findByEmail(username).orElse(null);
+                String displayName = (user != null && user.getName() != null && !user.getName().isBlank())
+                        ? user.getName()
+                        : username;
+                request.setCashierName(displayName);
+            } catch (Exception ignored) {
+                request.setCashierName(username);
+            }
         }
         return ResponseEntity.ok(fiscalReportService.generateShiftReport(request));
     }
@@ -40,7 +51,16 @@ public class FiscalReportController {
     public ResponseEntity<FiscalReportResponse> generateZReport(@RequestBody FiscalReportRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
-            request.setCashierName(authentication.getName());
+            String username = authentication.getName();
+            try {
+                var user = userRepository.findByEmail(username).orElse(null);
+                String displayName = (user != null && user.getName() != null && !user.getName().isBlank())
+                        ? user.getName()
+                        : username;
+                request.setCashierName(displayName);
+            } catch (Exception ignored) {
+                request.setCashierName(username);
+            }
         }
         // Z-отчет е същото като сменен отчет
         return ResponseEntity.ok(fiscalReportService.generateShiftReport(request));

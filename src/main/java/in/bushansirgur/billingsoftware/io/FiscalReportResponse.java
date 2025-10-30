@@ -28,6 +28,9 @@ public class FiscalReportResponse {
     private String deviceSerialNumber;
     private FiscalReportEntity.ReportStatus status;
     private String notes;
+    private String paymentBreakdown;
+    private BigDecimal cashDrawerStartAmount;
+    private BigDecimal cashDrawerEndAmount;
     
     public static FiscalReportResponse fromEntity(FiscalReportEntity entity) {
         return FiscalReportResponse.builder()
@@ -44,6 +47,9 @@ public class FiscalReportResponse {
                 .deviceSerialNumber(entity.getDeviceSerialNumber())
                 .status(entity.getStatus())
                 .notes(entity.getNotes())
+                .paymentBreakdown(entity.getPaymentBreakdown())
+                .cashDrawerStartAmount(entity.getCashDrawerStartAmount())
+                .cashDrawerEndAmount(entity.getCashDrawerEndAmount())
                 .build();
     }
 }
