@@ -165,24 +165,24 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             }
             log.info("Shift report debug -> session from: {} to {}", sessionFrom, sessionTo);
 
-            // сумирай по двата възможни ключа: email (aggUsername) и display name (cashierName)
-            final String emailKey = aggUsername;
-            final String nameKey = cashierName;
+            // сумирай по всички възможни ключове за максимална съвместимост
+            final java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+            if (aggUsername != null && !aggUsername.isBlank()) keys.add(aggUsername);
+            if (cashierName != null && !cashierName.isBlank()) keys.add(cashierName);
+            if (resolvedSessionCashier != null && !resolvedSessionCashier.isBlank()) keys.add(resolvedSessionCashier);
+            if (request.getCashierName() != null && !request.getCashierName().isBlank()) keys.add(request.getCashierName());
 
-            long cntEmail = orderEntityRepository.countByCashierBetween(emailKey, sessionFrom, sessionTo);
-            Double sumEmail = orderEntityRepository.sumSalesByCashierBetween(emailKey, sessionFrom, sessionTo);
-            log.info("Shift report debug -> emailKey='{}' cnt={}, sum={}", emailKey, cntEmail, sumEmail);
-
-            long cntName = 0L; Double sumName = 0.0;
-            if (nameKey != null && !nameKey.equalsIgnoreCase(emailKey)) {
-                cntName = orderEntityRepository.countByCashierBetween(nameKey, sessionFrom, sessionTo);
-                Double s = orderEntityRepository.sumSalesByCashierBetween(nameKey, sessionFrom, sessionTo);
-                sumName = s != null ? s : 0.0;
-                log.info("Shift report debug -> nameKey='{}' cnt={}, sum={}", nameKey, cntName, sumName);
+            long totalCnt = 0L;
+            double totalSum = 0.0;
+            for (String k : keys) {
+                long c = orderEntityRepository.countByCashierBetween(k, sessionFrom, sessionTo);
+                Double s = orderEntityRepository.sumSalesByCashierBetween(k, sessionFrom, sessionTo);
+                log.info("Shift report key='{}' -> cnt={}, sum={}", k, c, s);
+                totalCnt += c;
+                if (s != null) totalSum += s;
             }
-
-            totalReceipts = cntEmail + cntName;
-            totalSales = (sumEmail != null ? sumEmail : 0.0) + (sumName != null ? sumName : 0.0);
+            totalReceipts = totalCnt;
+            totalSales = totalSum;
             log.info("Shift report debug -> totalReceipts={}, totalSales={}", totalReceipts, totalSales);
         } else {
             // fallback: опитай да определиш касиера от подаденото име
