@@ -13,7 +13,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/items")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+// CORS is handled globally in SecurityConfig - no need for @CrossOrigin here
 public class PricingController {
 
     private final PricingService pricingService;

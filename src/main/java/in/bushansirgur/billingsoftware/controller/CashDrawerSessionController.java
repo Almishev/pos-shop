@@ -16,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping({"/api/v1.0/cash-drawer", "/cash-drawer"})
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+// CORS is handled globally in SecurityConfig - no need for @CrossOrigin here
 public class CashDrawerSessionController {
     
     private final CashDrawerSessionService cashDrawerSessionService;

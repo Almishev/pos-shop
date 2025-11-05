@@ -96,10 +96,18 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         try {
             org.springframework.security.core.Authentication auth =
                     org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            log.info("Shift report authentication check -> auth: {}, authenticated: {}", 
+                    auth != null ? auth.getClass().getSimpleName() : "null",
+                    auth != null ? auth.isAuthenticated() : false);
             if (auth != null && auth.isAuthenticated()) {
                 aggUsername = auth.getName();
+                log.info("Shift report -> extracted username from auth: {}", aggUsername);
+            } else {
+                log.warn("Shift report -> No authenticated user found in SecurityContext!");
             }
-        } catch (Exception ignore) {}
+        } catch (Exception e) {
+            log.error("Shift report -> Error getting authentication: {}", e.getMessage(), e);
+        }
 
         // опитай да вземеш displayName от БД спрямо имейла (aggUsername)
         if (aggUsername != null) {
@@ -133,36 +141,65 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         log.info("Shift report -> authenticated as '{}', cashierName used for query: '{}'", aggUsername, cashierName);
 
         String resolvedSessionCashier = null;
+        java.util.Optional<CashDrawerSessionEntity> sessionOpt = java.util.Optional.empty();
+        
         if (aggUsername != null) {
-            // опитай сесия първо по имейл, после по име
-            var sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(aggUsername, reportDate);
+            // Първо винаги търси сесия по касиер (email или име) - това е най-сигурното
+            sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(aggUsername, reportDate);
             if (sessionOpt.isEmpty() && displayName != null) {
                 sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(displayName, reportDate);
             }
-            // опитай още: ако е подадено устройство в заявката – вземи активната сесия по устройство за днешна дата
-            if (sessionOpt.isEmpty() && request.getDeviceSerialNumber() != null) {
+            
+            // Ако не намери по касиер, опитай по device (но само ако device-ът е подаден)
+            if (sessionOpt.isEmpty() && request.getDeviceSerialNumber() != null && !request.getDeviceSerialNumber().isBlank()) {
                 var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(request.getDeviceSerialNumber(), reportDate);
                 if (byDevice.isPresent()) {
-                    sessionOpt = byDevice;
-                    // ако сесията е на друг ключ (например email), използвай точно този ключ
-                    String sessionCashier = byDevice.get().getCashierUsername();
-                    if (sessionCashier != null && !sessionCashier.isBlank()) {
-                        // Използвай ключа от сесията за заявки, но не презаписвай display името
-                        // за да можем да агрегираме и по име, и по имейл при нужда
-                        aggUsername = sessionCashier;
-                        if (cashierName == null || cashierName.isBlank()) {
-                            cashierName = sessionCashier;
-                        }
-                        resolvedSessionCashier = sessionCashier;
-                        log.info("Shift report debug -> overridden keys from device session, sessionCashier='{}'", sessionCashier);
+                    // Провери дали device session-а е за същия касиер
+                    String deviceCashier = byDevice.get().getCashierUsername();
+                    if (deviceCashier != null && (deviceCashier.equalsIgnoreCase(aggUsername) || 
+                        (displayName != null && deviceCashier.equalsIgnoreCase(displayName)))) {
+                        sessionOpt = byDevice;
+                        log.info("Shift report debug -> Found session by device '{}' for cashier '{}'", 
+                                request.getDeviceSerialNumber(), deviceCashier);
+                    } else {
+                        log.warn("Shift report debug -> Device '{}' session belongs to different cashier '{}', ignoring", 
+                                request.getDeviceSerialNumber(), deviceCashier);
                     }
                 }
             }
+            
+            // Ако намери сесия по касиер, използвай device-а от тази сесия (независимо какво е подадено)
             if (sessionOpt.isPresent()) {
                 var s = sessionOpt.get();
                 if (s.getSessionStartTime() != null) sessionFrom = s.getSessionStartTime();
                 if (s.getSessionEndTime() != null) sessionTo = s.getSessionEndTime();
+                
+                // Device-ът от сесията ще се използва при създаването на отчета
+                String sessionDevice = s.getDeviceSerialNumber();
+                if (sessionDevice != null && !sessionDevice.isBlank()) {
+                    log.info("Shift report debug -> Found active session with device '{}' (request had '{}')", 
+                            sessionDevice, request.getDeviceSerialNumber());
+                }
+                
+                String sessionCashier = s.getCashierUsername();
+                if (sessionCashier != null && !sessionCashier.isBlank()) {
+                    resolvedSessionCashier = sessionCashier;
+                    log.info("Shift report debug -> Using cashier '{}' from active session", sessionCashier);
+                }
+            } else {
+                log.warn("Shift report debug -> No active session found for cashier '{}' or device '{}'", 
+                        aggUsername, request.getDeviceSerialNumber());
             }
+            
+            // НАП изискване: Не може да се генерира shift report без активна cash drawer session
+            if (sessionOpt.isEmpty()) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.PRECONDITION_FAILED,
+                        "Не може да се генерира сменен отчет без активна cash drawer сесия. " +
+                        "Моля, започнете работен ден (Контрол на касата) с въведена начална сума и избрано фискално устройство. " +
+                        "Това е задължително изискване на НАП.");
+            }
+            
             log.info("Shift report debug -> session from: {} to {}", sessionFrom, sessionTo);
 
             // сумирай по всички възможни ключове за максимална съвместимост
@@ -185,10 +222,25 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             totalSales = totalSum;
             log.info("Shift report debug -> totalReceipts={}, totalSales={}", totalReceipts, totalSales);
         } else {
-            // fallback: опитай да определиш касиера от подаденото име
+            // fallback: опитай да определиш касиера от подаденото име или устройство
+            log.warn("Shift report -> No authentication available, using fallback logic");
             String resolved = null;
             String altName = null;
-            if (request.getCashierName() != null) {
+            
+            // Първо опитай да намериш cash drawer session по device serial number
+            if (request.getDeviceSerialNumber() != null && !request.getDeviceSerialNumber().isBlank()) {
+                var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(request.getDeviceSerialNumber(), reportDate);
+                if (byDevice.isPresent()) {
+                    var session = byDevice.get();
+                    resolved = session.getCashierUsername();
+                    log.info("Shift report fallback -> Found session by device: cashier={}", resolved);
+                    if (session.getSessionStartTime() != null) sessionFrom = session.getSessionStartTime();
+                    if (session.getSessionEndTime() != null) sessionTo = session.getSessionEndTime();
+                }
+            }
+            
+            // Ако не намери по устройство, опитай по cashier name от request
+            if (resolved == null && request.getCashierName() != null && !request.getCashierName().isBlank()) {
                 try {
                     var u = userRepository.findByEmail(request.getCashierName()).orElse(null);
                     if (u == null) {
@@ -200,22 +252,37 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                     if (u != null) {
                         resolved = u.getEmail();
                         altName = u.getName();
+                        log.info("Shift report fallback -> Found user by cashierName: email={}, name={}", resolved, altName);
                     }
-                } catch (Exception ignore) {}
+                } catch (Exception e) {
+                    log.error("Shift report fallback -> Error finding user: {}", e.getMessage());
+                }
             }
+            
             if (resolved != null) {
-                String key = (altName != null && !altName.isBlank()) ? altName : resolved;
-                totalReceipts = orderEntityRepository.countByCashierBetween(key, sessionFrom, sessionTo);
-                Double sum = orderEntityRepository.sumSalesByCashierBetween(key, sessionFrom, sessionTo);
-                totalSales = sum != null ? sum : 0.0;
-                log.info("Shift report debug (fallback) -> cashier key: {}", key);
-                log.info("Shift report debug -> session from: {} to {}", sessionFrom, sessionTo);
-                log.info("Shift report debug -> totalReceipts={}, totalSales={}", totalReceipts, totalSales);
+                // Сумирай поръчките по всички възможни ключове
+                final java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
+                keys.add(resolved);
+                if (altName != null && !altName.isBlank()) keys.add(altName);
+                if (request.getCashierName() != null && !request.getCashierName().isBlank()) keys.add(request.getCashierName());
+                
+                long totalCnt = 0L;
+                double totalSum = 0.0;
+                for (String k : keys) {
+                    long c = orderEntityRepository.countByCashierBetween(k, sessionFrom, sessionTo);
+                    Double s = orderEntityRepository.sumSalesByCashierBetween(k, sessionFrom, sessionTo);
+                    log.info("Shift report fallback key='{}' -> cnt={}, sum={}", k, c, s);
+                    totalCnt += c;
+                    if (s != null) totalSum += s;
+                }
+                totalReceipts = totalCnt;
+                totalSales = totalSum;
+                log.info("Shift report fallback -> totalReceipts={}, totalSales={}", totalReceipts, totalSales);
             } else {
-                // последен fallback: по дата
-                totalReceipts = orderEntityRepository.countByOrderDate(reportDate);
-                Double sum = orderEntityRepository.sumSalesByDate(reportDate);
-                totalSales = sum != null ? sum : 0.0;
+                log.warn("Shift report fallback -> Could not determine cashier, returning zeros");
+                // Не правим fallback към всички поръчки - оставяме нули
+                totalReceipts = 0L;
+                totalSales = 0.0;
             }
         }
         
@@ -269,6 +336,27 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         }
         
         // Създаване на Z-отчет
+        // Използвай device-а от активната сесия, ако е наличен (независимо какво е подадено в request)
+        String deviceSerialForReport = request.getDeviceSerialNumber();
+        if (sessionOpt.isPresent()) {
+            String sessionDevice = sessionOpt.get().getDeviceSerialNumber();
+            if (sessionDevice != null && !sessionDevice.isBlank()) {
+                deviceSerialForReport = sessionDevice;
+                log.info("Shift report -> Using device '{}' from active session instead of request device '{}'", 
+                        sessionDevice, request.getDeviceSerialNumber());
+            }
+        }
+        
+        // Използвай cashier name от активната сесия, ако е наличен
+        String cashierNameForReport = request.getCashierName();
+        if (cashierNameForReport == null || cashierNameForReport.isBlank()) {
+            if (displayName != null && !displayName.isBlank()) {
+                cashierNameForReport = displayName;
+            } else if (resolvedSessionCashier != null && !resolvedSessionCashier.isBlank()) {
+                cashierNameForReport = resolvedSessionCashier;
+            }
+        }
+        
         String paymentBreakdownJson = buildPaymentBreakdownJson(sessionFrom, sessionTo, aggUsername, cashierName);
         FiscalReportEntity report = FiscalReportEntity.builder()
                 .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.SHIFT, reportDate))
@@ -278,8 +366,8 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .totalSales(totalSales != null ? BigDecimal.valueOf(totalSales) : BigDecimal.ZERO)
                 .totalVAT(totalVAT != null ? BigDecimal.valueOf(totalVAT) : BigDecimal.ZERO)
                 .totalNetSales(totalNetSales != null ? BigDecimal.valueOf(totalNetSales) : BigDecimal.ZERO)
-                .cashierName(request.getCashierName())
-                .deviceSerialNumber(request.getDeviceSerialNumber())
+                .cashierName(cashierNameForReport)
+                .deviceSerialNumber(deviceSerialForReport)
                 .notes(request.getNotes())
                 .cashDrawerStartAmount(cashDrawerStartAmount)
                 .cashDrawerEndAmount(cashDrawerEndAmount)

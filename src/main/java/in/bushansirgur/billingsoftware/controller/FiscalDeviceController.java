@@ -13,7 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/admin")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+// CORS is handled globally in SecurityConfig - no need for @CrossOrigin here
 public class FiscalDeviceController {
     
     private final FiscalDeviceService fiscalDeviceService;

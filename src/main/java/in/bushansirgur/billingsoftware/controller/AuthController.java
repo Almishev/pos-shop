@@ -32,7 +32,7 @@ public class AuthController {
     private final JwtUtil jwtUtil;
 
 
-    @PostMapping("/login")
+    @PostMapping({"/login", "/api/v1.0/login"})
     public AuthResponse login(@RequestBody AuthRequest request) throws Exception {
         authenticate(request.getEmail(), request.getPassword());
         final UserDetails userDetails = appUserDetailsService.loadUserByUsername(request.getEmail());

@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -41,6 +42,18 @@ public class CashDrawerSessionServiceImpl implements CashDrawerSessionService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, 
                     "Касиерът " + request.getCashierUsername() + " вече има активна сесия днес");
         }
+        
+        // НАП изискване: Началната сума е задължителна и трябва да е по-голяма от 0
+        if (request.getStartAmount() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+                    "Началната сума в касата е задължителна според изискванията на НАП. Моля, въведете начална сума.");
+        }
+        if (request.getStartAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+                    "Началната сума в касата трябва да е по-голяма от 0.00 лв. според изискванията на НАП.");
+        }
+        log.info("Start amount validated: {} for cashier: {}", 
+                request.getStartAmount(), request.getCashierUsername());
         
         // Авто-асоциация на устройство: 1) ако request.deviceSerialNumber е подаден и ACTIVE -> ползвай; 2) иначе първото ACTIVE устройство
         final String boundSerial;

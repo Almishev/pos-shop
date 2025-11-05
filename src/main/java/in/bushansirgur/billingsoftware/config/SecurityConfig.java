@@ -33,7 +33,7 @@ public class SecurityConfig {
     private final AppUserDetailsService appUserDetailsService;
     private final JwtRequestFilter jwtRequestFilter;
     
-    @Value("${ALLOWED_ORIGINS:http://localhost:3001,http://localhost:5173}")
+    @Value("${allowed.origins:http://localhost:3001,http://localhost:5173,http://192.168.80.101:3001,http://192.168.80.120:3001}")
     private String allowedOrigins;
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{

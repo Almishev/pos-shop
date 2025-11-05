@@ -18,7 +18,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/admin/promotions")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+// CORS is handled globally in SecurityConfig - no need for @CrossOrigin here
 public class PromotionController {
 
     private final PromotionRepository promotionRepository;

@@ -12,7 +12,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/loyalty")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:5173")
+// CORS is handled globally in SecurityConfig - no need for @CrossOrigin here
 public class LoyaltyController {
 
     private final LoyaltyService loyaltyService;

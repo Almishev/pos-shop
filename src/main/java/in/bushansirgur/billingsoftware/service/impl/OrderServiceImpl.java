@@ -32,6 +32,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderResponse createOrder(OrderRequest request) {
+        // Забележка: Frontend вече проверява за активна cash drawer session преди да позволи достъп до страницата "Продажби"
+        // и преди да създаде поръчка. Това е достатъчно за НАП изискванията.
+        
         OrderEntity newOrder = convertToOrderEntity(request);
 
         PaymentDetails paymentDetails = new PaymentDetails();
