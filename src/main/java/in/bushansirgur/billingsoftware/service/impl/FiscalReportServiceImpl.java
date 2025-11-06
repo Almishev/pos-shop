@@ -527,7 +527,10 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         
         // Получаване на данни по касиери за периода
         List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(reportStartTime, endOfDay);
-        String cashierBreakdownJson = buildCashierBreakdownJson(cashierData);
+        String cashierBreakdownJson = buildCashierBreakdownJson(cashierData, reportStartTime, endOfDay);
+        
+        // Генериране на обща разбивка по плащания за целия магазин
+        String paymentBreakdownJson = buildStorePaymentBreakdownJson(reportStartTime, endOfDay);
         
         // Създаване на общ дневен отчет за магазина
         FiscalReportEntity report = FiscalReportEntity.builder()
@@ -543,6 +546,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .cashDrawerStartAmount(null) // Няма контрол на касата за общ отчет
                 .cashDrawerEndAmount(null) // Няма контрол на касата за общ отчет
                 .cashierBreakdown(cashierBreakdownJson) // Данни по касиери
+                .paymentBreakdown(paymentBreakdownJson) // Разбивка по плащания
                 .notes(request.getNotes() != null ? request.getNotes() : reportNotes)
                 .build();
         
@@ -772,10 +776,14 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                "-" + String.format("%06d", (int)(Math.random() * 999999));
     }
     
-    private String buildCashierBreakdownJson(List<Object[]> cashierData) {
+    private String buildCashierBreakdownJson(List<Object[]> cashierData, LocalDateTime from, LocalDateTime to) {
         if (cashierData == null || cashierData.isEmpty()) {
             return "[]";
         }
+        
+        var CASH = in.bushansirgur.billingsoftware.io.PaymentMethod.CASH;
+        var CARD = in.bushansirgur.billingsoftware.io.PaymentMethod.CARD;
+        var SPLIT = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT;
         
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < cashierData.size(); i++) {
@@ -797,16 +805,62 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 }
             }
             
+            // Get payment breakdown for this cashier
+            long cashCnt = orderEntityRepository.countByCashierBetweenAndMethod(cashierEmail, CASH, from, to);
+            Double cashSum = orderEntityRepository.sumGrandByCashierBetweenAndMethod(cashierEmail, CASH, from, to);
+            long cardCnt = orderEntityRepository.countByCashierBetweenAndMethod(cashierEmail, CARD, from, to);
+            Double cardSum = orderEntityRepository.sumGrandByCashierBetweenAndMethod(cashierEmail, CARD, from, to);
+            long splitCnt = orderEntityRepository.countByCashierBetweenAndMethod(cashierEmail, SPLIT, from, to);
+            Double splitSum = orderEntityRepository.sumGrandByCashierBetweenAndMethod(cashierEmail, SPLIT, from, to);
+            Double splitCash = orderEntityRepository.sumSplitCashByCashierBetween(cashierEmail, from, to);
+            Double splitCard = orderEntityRepository.sumSplitCardByCashierBetween(cashierEmail, from, to);
+            
             if (i > 0) json.append(",");
             json.append("{")
                 .append("\"cashier\":\"").append(displayName != null ? escapeJson(displayName) : "Неизвестен").append("\",")
                 .append("\"ordersCount\":").append(count != null ? count : 0).append(",")
-                .append("\"totalAmount\":").append(total != null ? total : 0.0)
+                .append("\"totalAmount\":").append(total != null ? total : 0.0).append(",")
+                .append("\"payments\":{")
+                    .append("\"CASH\":{\"count\":").append(cashCnt).append(",\"total\":").append(cashSum != null ? cashSum : 0.0).append("},")
+                    .append("\"CARD\":{\"count\":").append(cardCnt).append(",\"total\":").append(cardSum != null ? cardSum : 0.0).append("},")
+                    .append("\"SPLIT\":{\"count\":").append(splitCnt).append(",\"total\":").append(splitSum != null ? splitSum : 0.0)
+                        .append(",\"cash\":").append(splitCash != null ? splitCash : 0.0)
+                        .append(",\"card\":").append(splitCard != null ? splitCard : 0.0).append("}")
+                .append("}")
                 .append("}");
         }
         json.append("]");
         
         return json.toString();
+    }
+    
+    private String buildStorePaymentBreakdownJson(LocalDateTime from, LocalDateTime to) {
+        try {
+            var CASH = in.bushansirgur.billingsoftware.io.PaymentMethod.CASH;
+            var CARD = in.bushansirgur.billingsoftware.io.PaymentMethod.CARD;
+            var SPLIT = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT;
+            
+            long cashCnt = orderEntityRepository.countByPaymentMethodBetween(CASH, from, to);
+            Double cashSum = orderEntityRepository.sumByPaymentMethodBetween(CASH, from, to);
+            long cardCnt = orderEntityRepository.countByPaymentMethodBetween(CARD, from, to);
+            Double cardSum = orderEntityRepository.sumByPaymentMethodBetween(CARD, from, to);
+            long splitCnt = orderEntityRepository.countByPaymentMethodBetween(SPLIT, from, to);
+            Double splitSum = orderEntityRepository.sumByPaymentMethodBetween(SPLIT, from, to);
+            Double splitCash = orderEntityRepository.sumSplitCashBetween(from, to);
+            Double splitCard = orderEntityRepository.sumSplitCardBetween(from, to);
+            
+            String json = "{" +
+                    "\"CASH\":{\"count\":"+cashCnt+",\"total\":"+(cashSum != null ? cashSum : 0.0)+"}," +
+                    "\"CARD\":{\"count\":"+cardCnt+",\"total\":"+(cardSum != null ? cardSum : 0.0)+"}," +
+                    "\"SPLIT\":{\"count\":"+splitCnt+",\"total\":"+(splitSum != null ? splitSum : 0.0)+
+                    ",\"cash\":"+(splitCash != null ? splitCash : 0.0)+
+                    ",\"card\":"+(splitCard != null ? splitCard : 0.0)+"}" +
+                    "}";
+            return json;
+        } catch (Exception e) {
+            log.warn("Failed to build store payment breakdown json: {}", e.getMessage());
+            return null;
+        }
     }
     
     private String escapeJson(String str) {

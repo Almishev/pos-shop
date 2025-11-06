@@ -84,4 +84,21 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
     @Query("SELECT COUNT(o) FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to")
     Long countOrdersBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
+    // Payment breakdown for store daily reports (all cashiers)
+    @Query("SELECT COUNT(o) FROM OrderEntity o WHERE o.paymentMethod = :method AND o.createdAt >= :from AND o.createdAt <= :to")
+    Long countByPaymentMethodBetween(@Param("method") in.bushansirgur.billingsoftware.io.PaymentMethod method,
+                                     @Param("from") LocalDateTime from,
+                                     @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.grandTotal),0) FROM OrderEntity o WHERE o.paymentMethod = :method AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumByPaymentMethodBetween(@Param("method") in.bushansirgur.billingsoftware.io.PaymentMethod method,
+                                     @Param("from") LocalDateTime from,
+                                     @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.paymentDetails.cashAmount),0) FROM OrderEntity o WHERE o.paymentMethod = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumSplitCashBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.paymentDetails.cardAmount),0) FROM OrderEntity o WHERE o.paymentMethod = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumSplitCardBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
 }
