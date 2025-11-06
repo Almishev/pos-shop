@@ -37,10 +37,6 @@ public class SecurityConfig {
     private String allowedOrigins;
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
-        System.out.println("=== SecurityConfig.securityFilterChain called ===");
-        System.out.println("Cash drawer endpoints configured:");
-        System.out.println("  - /api/v1.0/cash-drawer/force-end/** -> ADMIN only");
-        System.out.println("  - /api/v1.0/cash-drawer/** -> USER, ADMIN");
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
@@ -82,8 +78,10 @@ public class SecurityConfig {
                     .requestMatchers(
                             "/api/v1.0/cash-drawer/**"
                     ).hasAnyRole("USER", "ADMIN")
+                    // Fiscal reports - MUST be before /reports/** rule to avoid conflicts
                     // Allow USER to generate shift reports and view all reports; other fiscal reports stay admin-only
                     .requestMatchers("/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/api/admin/fiscal-reports", "/api/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/api/v1.0/admin/fiscal-reports", "/api/v1.0/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
                     // Fiscal reports stats for dashboard
                     .requestMatchers("/admin/fiscal-reports/stats/**").hasAnyRole("USER", "ADMIN")
@@ -95,17 +93,21 @@ public class SecurityConfig {
                     .requestMatchers("/api/v1.0/admin/promotions/**").permitAll()
                     .requestMatchers("/items/effective").hasAnyRole("USER", "ADMIN")
                     // Admin-only endpoints (users, inventory, categories) - fiscal reports handled above
-                    .requestMatchers("/admin/users/**", "/admin/inventory/**", "/admin/categories/**", "/api/v1.0/admin/categories/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
+                    .requestMatchers("/admin/users/**", "/api/admin/users/**", "/api/v1.0/admin/users/**", "/admin/inventory/**", "/api/admin/inventory/**", "/api/v1.0/admin/inventory/**", "/admin/categories/**", "/api/admin/categories/**", "/api/v1.0/admin/categories/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     // POS card payments endpoints
                     .requestMatchers("/pos-payments/**", "/api/v1.0/pos-payments/**").hasAnyRole("USER", "ADMIN")
                     .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
-                    System.out.println("=== AccessDenied === URI: " + request.getRequestURI());
                     var authc = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-                    System.out.println("Auth present: " + (authc != null) + ", user=" + (authc != null ? authc.getName() : "-") + ", roles=" + (authc != null ? authc.getAuthorities() : "-"));
                     response.setStatus(403);
+                    response.setContentType("application/json");
+                    try {
+                        response.getWriter().write("{\"error\":\"Access Denied\",\"uri\":\"" + request.getRequestURI() + "\",\"method\":\"" + request.getMethod() + "\",\"roles\":\"" + (authc != null ? authc.getAuthorities() : "none") + "\"}");
+                    } catch (Exception e) {
+                        // Ignore
+                    }
                 }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class);

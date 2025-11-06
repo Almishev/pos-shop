@@ -491,27 +491,42 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     @Override
     public FiscalReportResponse generateStoreDailyReport(FiscalReportRequest request) {
         LocalDate reportDate = request.getReportDate() != null ? request.getReportDate() : LocalDate.now();
+        LocalDateTime startOfDay = reportDate.atStartOfDay();
+        LocalDateTime endOfDay = reportDate.atTime(LocalTime.MAX);
         
-        // Проверка за съществуващ общ дневен отчет
+        // Проверка за съществуващ общ дневен отчет за деня
         List<FiscalReportEntity> existingReports = fiscalReportRepository.findByReportTypeAndDateRange(
                 FiscalReportEntity.ReportType.STORE_DAILY, reportDate, reportDate);
         
+        LocalDateTime reportStartTime = startOfDay;
+        String reportNotes = "Общ дневен отчет за целия магазин";
+        
+        // Ако има съществуващ отчет(и), намираме последния и изчисляваме данните само за продажбите след него
         if (!existingReports.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, 
-                    "Store daily report for date " + reportDate + " already exists");
+            // Намираме последния отчет (по generatedAt)
+            FiscalReportEntity lastReport = existingReports.stream()
+                    .max((r1, r2) -> r1.getGeneratedAt().compareTo(r2.getGeneratedAt()))
+                    .orElse(null);
+            
+            if (lastReport != null) {
+                reportStartTime = lastReport.getGeneratedAt();
+                reportNotes = String.format("Допълнителен общ дневен отчет за магазина (след първия отчет от %s)", 
+                        lastReport.getGeneratedAt().toString());
+                log.info("Generating additional store daily report for date {} after previous report at {}", 
+                        reportDate, reportStartTime);
+            }
         }
         
-        // Изчисляване на реални данни за целия магазин за деня
-        // Събира данни от всички касиери и всички поръчки за деня
-        Long totalReceipts = orderEntityRepository.countByOrderDate(reportDate);
-        Double totalSales = orderEntityRepository.sumSalesByDate(reportDate);
+        // Изчисляване на реални данни за целия магазин за периода (от началото на деня или след последния отчет)
+        Long totalReceipts = orderEntityRepository.countOrdersBetween(reportStartTime, endOfDay);
+        Double totalSales = orderEntityRepository.sumSalesBetween(reportStartTime, endOfDay);
         
         // Изчисляване на ДДС (20% от продажбите)
         Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
         Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
         
-        // Получаване на данни по касиери за деня
-        List<Object[]> cashierData = orderEntityRepository.summarizeByCashierForDate(reportDate);
+        // Получаване на данни по касиери за периода
+        List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(reportStartTime, endOfDay);
         String cashierBreakdownJson = buildCashierBreakdownJson(cashierData);
         
         // Създаване на общ дневен отчет за магазина
@@ -528,7 +543,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .cashDrawerStartAmount(null) // Няма контрол на касата за общ отчет
                 .cashDrawerEndAmount(null) // Няма контрол на касата за общ отчет
                 .cashierBreakdown(cashierBreakdownJson) // Данни по касиери
-                .notes(request.getNotes() != null ? request.getNotes() : "Общ дневен отчет за целия магазин")
+                .notes(request.getNotes() != null ? request.getNotes() : reportNotes)
                 .build();
         
         report = fiscalReportRepository.save(report);
@@ -543,8 +558,10 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             log.warn("Failed to send store daily report to NAP");
         }
         
-        // Нулираме данните след генериране на общ Z-отчет
-        resetDataAfterStoreDailyReport(reportDate);
+        // ВАЖНО: Не нулираме данните автоматично след генериране на отчет
+        // Това позволява на магазина да генерира допълнителни отчети ако има допълнителни продажби
+        // Управителят може ръчно да нулира данните чрез опция за край на работния ден
+        // resetDataAfterStoreDailyReport(reportDate); // Коментирано - не нулираме автоматично
         
         return FiscalReportResponse.fromEntity(report);
     }
@@ -763,13 +780,26 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i < cashierData.size(); i++) {
             Object[] row = cashierData.get(i);
-            String cashier = (String) row[0];
+            String cashierEmail = (String) row[0];
             Long count = (Long) row[1];
             Double total = (Double) row[2];
             
+            // Try to convert email to display name
+            String displayName = cashierEmail;
+            if (cashierEmail != null) {
+                try {
+                    var user = userRepository.findByEmail(cashierEmail).orElse(null);
+                    if (user != null && user.getName() != null && !user.getName().isBlank()) {
+                        displayName = user.getName();
+                    }
+                } catch (Exception ignored) {
+                    // If lookup fails, use email as fallback
+                }
+            }
+            
             if (i > 0) json.append(",");
             json.append("{")
-                .append("\"cashier\":\"").append(cashier != null ? cashier : "Неизвестен").append("\",")
+                .append("\"cashier\":\"").append(displayName != null ? escapeJson(displayName) : "Неизвестен").append("\",")
                 .append("\"ordersCount\":").append(count != null ? count : 0).append(",")
                 .append("\"totalAmount\":").append(total != null ? total : 0.0)
                 .append("}");
@@ -777,6 +807,15 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         json.append("]");
         
         return json.toString();
+    }
+    
+    private String escapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
     
     @Override

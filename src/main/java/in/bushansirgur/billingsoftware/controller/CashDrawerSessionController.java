@@ -24,15 +24,10 @@ public class CashDrawerSessionController {
     // Започване на работен ден
     @PostMapping("/start")
     public ResponseEntity<CashDrawerSessionResponse> startWorkDay(@RequestBody CashDrawerSessionRequest request) {
-        System.out.println("=== CashDrawerSessionController.startWorkDay called ===");
-        System.out.println("Payload startAmount=" + request.getStartAmount() + 
-                ", deviceSerialNumber=" + request.getDeviceSerialNumber() + 
-                ", registerId=" + request.getRegisterId());
         // Автоматично попълване на касиера от authentication
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             request.setCashierUsername(authentication.getName());
-            System.out.println("Authenticated user=" + authentication.getName());
         }
         
         CashDrawerSessionResponse response = cashDrawerSessionService.startWorkDay(request);
@@ -52,21 +47,16 @@ public class CashDrawerSessionController {
     // Получаване на активна сесия за текущия касиер
     @GetMapping("/active")
     public ResponseEntity<CashDrawerSessionResponse> getActiveSession() {
-        System.out.println("=== getActiveSession called ===");
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
-            System.out.println("No authentication found");
             return ResponseEntity.notFound().build();
         }
         
-        System.out.println("Authenticated user: " + authentication.getName());
         try {
             CashDrawerSessionResponse response = cashDrawerSessionService.getActiveSession(
                     authentication.getName(), LocalDate.now());
-            System.out.println("Active session found: " + response.getId());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.out.println("No active session found for user: " + authentication.getName() + ", error: " + e.getMessage());
             return ResponseEntity.notFound().build();
         }
     }
@@ -103,7 +93,6 @@ public class CashDrawerSessionController {
     // Debug endpoint за всички сесии
     @GetMapping("/debug/all-sessions")
     public ResponseEntity<List<CashDrawerSessionResponse>> getAllSessions() {
-        System.out.println("=== getAllSessions called ===");
         List<CashDrawerSessionResponse> sessions = cashDrawerSessionService.getAllSessions();
         return ResponseEntity.ok(sessions);
     }
@@ -111,7 +100,6 @@ public class CashDrawerSessionController {
     // Принудително приключване на сесия (само за админи)
     @PostMapping("/force-end/{sessionId}")
     public ResponseEntity<CashDrawerSessionResponse> forceEndSession(@PathVariable Long sessionId) {
-        System.out.println("=== forceEndSession called for sessionId: " + sessionId + " ===");
         CashDrawerSessionResponse response = cashDrawerSessionService.forceEndSession(sessionId);
         return ResponseEntity.ok(response);
     }

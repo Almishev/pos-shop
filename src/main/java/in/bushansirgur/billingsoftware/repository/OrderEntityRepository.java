@@ -74,7 +74,14 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
 
     @Query("SELECT COALESCE(SUM(o.paymentDetails.cardAmount),0) FROM OrderEntity o WHERE LOWER(TRIM(o.cashierUsername)) = LOWER(TRIM(:cashier)) AND o.paymentMethod = in.bushansirgur.billingsoftware.io.PaymentMethod.SPLIT AND o.createdAt >= :from AND o.createdAt <= :to")
     Double sumSplitCardByCashierBetween(@Param("cashier") String cashier,
-                                        @Param("from") LocalDateTime from,
-                                        @Param("to") LocalDateTime to);
+                                       @Param("from") LocalDateTime from,
+                                       @Param("to") LocalDateTime to);
+
+    // Methods for store daily reports - calculate sales between dates
+    @Query("SELECT COALESCE(SUM(o.grandTotal),0) FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumSalesBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    @Query("SELECT COUNT(o) FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to")
+    Long countOrdersBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
 }

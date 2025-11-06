@@ -20,15 +20,8 @@ public class FiscalDeviceController {
     
     @GetMapping("/fiscal-devices")
     public ResponseEntity<List<FiscalDeviceEntity>> getAllDevices() {
-        System.out.println("=== FiscalDeviceController.getAllDevices called ===");
-        System.out.println("Request received for /api/v1.0/admin/fiscal-devices");
-        
         try {
             List<FiscalDeviceEntity> devices = fiscalDeviceService.getAllDevices();
-            System.out.println("Found " + devices.size() + " fiscal devices");
-            for (FiscalDeviceEntity device : devices) {
-                System.out.println("Device: " + device.getSerialNumber() + " - " + device.getStatus());
-            }
             return ResponseEntity.ok(devices);
         } catch (Exception e) {
             System.err.println("Error in getAllDevices: " + e.getMessage());
@@ -44,13 +37,8 @@ public class FiscalDeviceController {
     
     @PostMapping("/fiscal-devices")
     public ResponseEntity<FiscalDeviceEntity> registerDevice(@RequestBody FiscalDeviceEntity device) {
-        System.out.println("=== FiscalDeviceController.registerDevice called ===");
-        System.out.println("Request received for /api/v1.0/admin/fiscal-devices");
-        System.out.println("Device data: " + device);
-        
         try {
             FiscalDeviceEntity savedDevice = fiscalDeviceService.registerDevice(device);
-            System.out.println("Device registered successfully: " + savedDevice.getId());
             return ResponseEntity.ok(savedDevice);
         } catch (Exception e) {
             System.err.println("Error in registerDevice: " + e.getMessage());
@@ -61,13 +49,8 @@ public class FiscalDeviceController {
     
     @PutMapping("/fiscal-devices")
     public ResponseEntity<FiscalDeviceEntity> updateDevice(@RequestBody FiscalDeviceEntity device) {
-        System.out.println("=== FiscalDeviceController.updateDevice called ===");
-        System.out.println("Request received for /api/v1.0/admin/fiscal-devices (PUT)");
-        System.out.println("Device data: " + device);
-        
         try {
             FiscalDeviceEntity updatedDevice = fiscalDeviceService.updateDevice(device);
-            System.out.println("Device updated successfully: " + updatedDevice.getId());
             return ResponseEntity.ok(updatedDevice);
         } catch (Exception e) {
             System.err.println("Error in updateDevice: " + e.getMessage());
@@ -78,12 +61,8 @@ public class FiscalDeviceController {
     
     @DeleteMapping("/fiscal-devices/{deviceId}")
     public ResponseEntity<Void> deleteDevice(@PathVariable Long deviceId) {
-        System.out.println("=== FiscalDeviceController.deleteDevice called ===");
-        System.out.println("Request received for /api/v1.0/admin/fiscal-devices/" + deviceId + " (DELETE)");
-        
         try {
             fiscalDeviceService.deleteDevice(deviceId);
-            System.out.println("Device deleted successfully: " + deviceId);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             System.err.println("Error in deleteDevice: " + e.getMessage());

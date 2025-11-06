@@ -124,63 +124,17 @@ public class CashDrawerSessionServiceImpl implements CashDrawerSessionService {
         session = cashDrawerSessionRepository.save(session);
         log.info("Work day ended for cashier: {} - Start: {}, End: {}", 
                 session.getCashierUsername(), session.getStartAmount(), session.getEndAmount());
-        System.out.println("=== Session closed for device: " + session.getDeviceSerialNumber() + " ===");
-        System.out.println("Session status changed to: " + session.getStatus());
-        
-        // Debug: проверка дали устройството е все още заето
-        boolean stillLocked = cashDrawerSessionRepository.existsByDeviceSerialNumberAndStatus(
-                session.getDeviceSerialNumber(), CashDrawerSessionEntity.SessionStatus.ACTIVE);
-        System.out.println("Device " + session.getDeviceSerialNumber() + " still locked: " + stillLocked);
-        
-        // Debug: проверка на всички сесии за това устройство
-        var allSessions = cashDrawerSessionRepository.findByDeviceSerialNumberAndStatus(
-                session.getDeviceSerialNumber(), CashDrawerSessionEntity.SessionStatus.ACTIVE);
-        System.out.println("All ACTIVE sessions for device " + session.getDeviceSerialNumber() + ": " + allSessions.size());
-        for (var s : allSessions) {
-            System.out.println("  Session ID: " + s.getId() + ", Cashier: " + s.getCashierUsername() + 
-                             ", Status: " + s.getStatus() + ", Date: " + s.getSessionDate());
-        }
-        
-        // Debug: проверка на всички сесии за това устройство (включително CLOSED)
-        var allSessionsAllStatuses = cashDrawerSessionRepository.findByDeviceSerialNumberAndStatus(
-                session.getDeviceSerialNumber(), CashDrawerSessionEntity.SessionStatus.CLOSED);
-        System.out.println("All CLOSED sessions for device " + session.getDeviceSerialNumber() + ": " + allSessionsAllStatuses.size());
-        for (var s : allSessionsAllStatuses) {
-            System.out.println("  Session ID: " + s.getId() + ", Cashier: " + s.getCashierUsername() + 
-                             ", Status: " + s.getStatus() + ", Date: " + s.getSessionDate());
-        }
-        
-        // Debug: проверка на всички сесии за това устройство (всички статуси)
-        var allSessionsAllStatuses2 = cashDrawerSessionRepository.findByDeviceSerialNumberAndStatus(
-                session.getDeviceSerialNumber(), CashDrawerSessionEntity.SessionStatus.ACTIVE);
-        System.out.println("All ACTIVE sessions for device " + session.getDeviceSerialNumber() + ": " + allSessionsAllStatuses2.size());
-        for (var s : allSessionsAllStatuses2) {
-            System.out.println("  Session ID: " + s.getId() + ", Cashier: " + s.getCashierUsername() + 
-                             ", Status: " + s.getStatus() + ", Date: " + s.getSessionDate());
-        }
-        
-        // Debug: проверка на всички сесии за това устройство (всички статуси)
-        var allSessionsAllStatuses3 = cashDrawerSessionRepository.findByDeviceSerialNumberAndStatus(
-                session.getDeviceSerialNumber(), CashDrawerSessionEntity.SessionStatus.ACTIVE);
-        System.out.println("All ACTIVE sessions for device " + session.getDeviceSerialNumber() + ": " + allSessionsAllStatuses3.size());
-        for (var s : allSessionsAllStatuses3) {
-            System.out.println("  Session ID: " + s.getId() + ", Cashier: " + s.getCashierUsername() + 
-                             ", Status: " + s.getStatus() + ", Date: " + s.getSessionDate());
-        }
         
         return CashDrawerSessionResponse.fromEntity(session);
     }
     
     @Override
     public CashDrawerSessionResponse getActiveSession(String cashierUsername, LocalDate date) {
-        System.out.println("=== getActiveSession called for user: " + cashierUsername + ", date: " + date + " ===");
-        
         // Първо търсим за конкретната дата
         var session = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(cashierUsername, date);
         
         // Ако няма за днешна дата, търсим за всички дати (за да хванем "зависнали" сесии)
         if (session.isEmpty()) {
-            System.out.println("No active session found for date " + date + ", searching all dates...");
             // Търсим всички активни сесии за този касиер
             var allActiveSessions = cashDrawerSessionRepository.findAll()
                     .stream()
@@ -189,18 +143,15 @@ public class CashDrawerSessionServiceImpl implements CashDrawerSessionService {
                     .collect(Collectors.toList());
             
             if (!allActiveSessions.isEmpty()) {
-                System.out.println("Found " + allActiveSessions.size() + " active sessions for user " + cashierUsername);
                 session = Optional.of(allActiveSessions.get(0));
             }
         }
         
         if (session.isEmpty()) {
-            System.out.println("No active session found for user: " + cashierUsername);
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, 
                     "Няма активна сесия за касиер " + cashierUsername + " на " + date);
         }
         
-        System.out.println("Active session found: ID=" + session.get().getId() + ", Date=" + session.get().getSessionDate());
         return CashDrawerSessionResponse.fromEntity(session.get());
     }
     

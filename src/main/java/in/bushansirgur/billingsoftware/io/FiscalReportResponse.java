@@ -29,6 +29,7 @@ public class FiscalReportResponse {
     private FiscalReportEntity.ReportStatus status;
     private String notes;
     private String paymentBreakdown;
+    private String cashierBreakdown;
     private BigDecimal cashDrawerStartAmount;
     private BigDecimal cashDrawerEndAmount;
     
@@ -48,6 +49,7 @@ public class FiscalReportResponse {
                 .status(entity.getStatus())
                 .notes(entity.getNotes())
                 .paymentBreakdown(entity.getPaymentBreakdown())
+                .cashierBreakdown(entity.getCashierBreakdown())
                 .cashDrawerStartAmount(entity.getCashDrawerStartAmount())
                 .cashDrawerEndAmount(entity.getCashDrawerEndAmount())
                 .build();
