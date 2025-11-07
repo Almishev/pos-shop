@@ -2,6 +2,7 @@ package in.bushansirgur.billingsoftware.service.impl;
 
 import in.bushansirgur.billingsoftware.entity.OrderEntity;
 import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
+import in.bushansirgur.billingsoftware.repository.UserRepository;
 import in.bushansirgur.billingsoftware.service.ReportExportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 public class ReportExportServiceImpl implements ReportExportService {
 
     private final OrderEntityRepository orderRepository;
+    private final UserRepository userRepository;
     private final S3Client s3Client;
 
     @Value("${reports.s3.bucket}")
@@ -78,11 +80,30 @@ public class ReportExportServiceImpl implements ReportExportService {
         LocalDateTime fromDt = from.atStartOfDay();
         LocalDateTime toDt = to.atTime(23,59,59);
         List<Object[]> rows = orderRepository.summarizeByCashier(fromDt, toDt);
-        return rows.stream().map(r -> in.bushansirgur.billingsoftware.io.CashierSummaryResponse.builder()
-                .cashierUsername((String) r[0])
-                .totalOrders(((Number) r[1]).longValue())
-                .totalAmount(((Number) r[2]).doubleValue())
-                .build()).collect(Collectors.toList());
+        return rows.stream().map(r -> {
+            String cashierEmail = (String) r[0];
+            Long count = ((Number) r[1]).longValue();
+            Double total = ((Number) r[2]).doubleValue();
+            
+            // Try to convert email to display name (same logic as in FiscalReportServiceImpl)
+            String displayName = cashierEmail;
+            if (cashierEmail != null) {
+                try {
+                    var user = userRepository.findByEmail(cashierEmail).orElse(null);
+                    if (user != null && user.getName() != null && !user.getName().isBlank()) {
+                        displayName = user.getName();
+                    }
+                } catch (Exception ignored) {
+                    // If lookup fails, use email as fallback
+                }
+            }
+            
+            return in.bushansirgur.billingsoftware.io.CashierSummaryResponse.builder()
+                    .cashierUsername(displayName) // Use display name instead of email
+                    .totalOrders(count)
+                    .totalAmount(total)
+                    .build();
+        }).collect(Collectors.toList());
     }
 
     @Override
