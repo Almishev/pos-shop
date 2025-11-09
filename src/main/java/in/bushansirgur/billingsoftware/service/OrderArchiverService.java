@@ -1,5 +1,7 @@
 package in.bushansirgur.billingsoftware.service;
 
+import java.time.LocalDate;
+
 public interface OrderArchiverService {
 
     /**
@@ -7,6 +9,12 @@ public interface OrderArchiverService {
      * Returns number of archived orders.
      */
     int archiveOldOrders();
+
+    /**
+     * Archive orders older than the specified cutoff date to S3 and purge after success.
+     * Returns number of archived orders.
+     */
+    int archiveOrdersBefore(LocalDate cutoffDate);
 
     /**
      * Export orders in given [inclusive) month (YYYY, MM) to S3 without purge.

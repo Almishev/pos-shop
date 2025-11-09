@@ -576,22 +576,49 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         LocalDate startOfMonth = reportDate.withDayOfMonth(1);
         LocalDate endOfMonth = reportDate.withDayOfMonth(reportDate.lengthOfMonth());
         
-        // Проверка за съществуващ месечен отчет
+        // Проверка за съществуващ месечен отчет (само за информационни цели, не блокираме)
         List<FiscalReportEntity> existingReports = fiscalReportRepository.findByReportTypeAndDateRange(
                 FiscalReportEntity.ReportType.MONTHLY, startOfMonth, endOfMonth);
         
         if (!existingReports.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, 
-                    "Monthly report for " + reportDate.getMonth() + " " + reportDate.getYear() + " already exists");
+            log.info("Generating additional monthly report for {} {}. Existing reports count: {}", 
+                    reportDate.getMonth(), reportDate.getYear(), existingReports.size());
         }
         
-        // Изчисляване на месечна статистика
+        // Изчисляване на месечна статистика за целия магазин (всички каси и всички устройства)
         LocalDateTime startOfMonthDateTime = startOfMonth.atStartOfDay();
         LocalDateTime endOfMonthDateTime = endOfMonth.atTime(LocalTime.MAX);
         
-        Long totalReceipts = fiscalReceiptRepository.countByDateRange(startOfMonthDateTime, endOfMonthDateTime);
-        Double totalSales = fiscalReceiptRepository.sumGrandTotalByDateRange(startOfMonthDateTime, endOfMonthDateTime);
-        Double totalVAT = fiscalReceiptRepository.sumVatAmountByDateRange(startOfMonthDateTime, endOfMonthDateTime);
+        // Използваме orderEntityRepository за консистентност с дневния отчет
+        Long totalReceipts = orderEntityRepository.countOrdersBetween(startOfMonthDateTime, endOfMonthDateTime);
+        Double totalSales = orderEntityRepository.sumSalesBetween(startOfMonthDateTime, endOfMonthDateTime);
+        
+        // Изчисляване на ДДС (20% от продажбите)
+        Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
+        Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
+        
+        // Получаване на данни по касиери за целия месец
+        List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(startOfMonthDateTime, endOfMonthDateTime);
+        String cashierBreakdownJson = buildCashierBreakdownJson(cashierData, startOfMonthDateTime, endOfMonthDateTime);
+        
+        // Генериране на обща разбивка по плащания за целия магазин за месеца
+        String paymentBreakdownJson = buildStorePaymentBreakdownJson(startOfMonthDateTime, endOfMonthDateTime);
+        
+        // За месечен отчет използваме главното фискално устройство или "Всички устройства"
+        String deviceSerial = request.getDeviceSerialNumber();
+        if (deviceSerial == null || deviceSerial.isBlank()) {
+            // Ако не е посочено устройство, използваме главното от конфигурацията или "Всички устройства"
+            try {
+                String mainDeviceSerial = mainFiscalDeviceProperties.getSerial();
+                if (mainDeviceSerial != null && !mainDeviceSerial.isBlank()) {
+                    deviceSerial = mainDeviceSerial;
+                } else {
+                    deviceSerial = "Всички устройства";
+                }
+            } catch (Exception e) {
+                deviceSerial = "Всички устройства";
+            }
+        }
         
         FiscalReportEntity report = FiscalReportEntity.builder()
                 .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.MONTHLY, reportDate))
@@ -600,15 +627,16 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .totalReceipts(totalReceipts != null ? totalReceipts.intValue() : 0)
                 .totalSales(totalSales != null ? BigDecimal.valueOf(totalSales) : BigDecimal.ZERO)
                 .totalVAT(totalVAT != null ? BigDecimal.valueOf(totalVAT) : BigDecimal.ZERO)
-                .totalNetSales(totalSales != null && totalVAT != null ? 
-                        BigDecimal.valueOf(totalSales - totalVAT) : BigDecimal.ZERO)
-                .cashierName(request.getCashierName())
-                .deviceSerialNumber(request.getDeviceSerialNumber())
+                .totalNetSales(totalNetSales != null ? BigDecimal.valueOf(totalNetSales) : BigDecimal.ZERO)
+                .cashierName("Всички касиери") // Месечният отчет е за целия магазин
+                .deviceSerialNumber(deviceSerial)
                 .notes(request.getNotes())
+                .cashierBreakdown(cashierBreakdownJson)
+                .paymentBreakdown(paymentBreakdownJson)
                 .build();
         
         report = fiscalReportRepository.save(report);
-        log.info("Monthly report generated: {}", report.getReportNumber());
+        log.info("Monthly report generated: {} with cashier breakdown and payment breakdown", report.getReportNumber());
         
         return FiscalReportResponse.fromEntity(report);
     }
@@ -966,10 +994,15 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                         "Report is not a store daily report");
             }
             
+            // ВАЖНО: В реална система фискалното устройство автоматично изпраща Z-отчета към НАП
+            // чрез интернет връзка. Този метод е за проследяване/логиране или за ръчно изпращане
+            // в специални случаи (напр. ако фискалното устройство не е успело да изпрати).
+            // 
             // В реална система тук бихме:
-            // 1. Изпратили данните към НАП чрез главното фискално устройство
-            // 2. Получили потвърждение от НАП
-            // 3. Записали статуса на изпращането
+            // 1. Проверили дали фискалното устройство е изпратило автоматично
+            // 2. Ако не - изпратили данните ръчно чрез API на фискалното устройство
+            // 3. Получили потвърждение от НАП
+            // 4. Записали статуса на изпращането
             
             log.info("Store daily report {} sent to NAP successfully", report.getReportNumber());
             log.info("Report details: Date={}, Total Sales={}, Total VAT={}", 
@@ -997,12 +1030,15 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                         "Report is not a shift report");
             }
             
-            // В реална система тук бихме:
-            // 1. Изпратили данните към НАП чрез конкретното фискално устройство
-            // 2. Получили потвърждение от НАП
-            // 3. Записали статуса на изпращането
+            // ВАЖНО: X-отчетът (сменен отчет) е ВЪТРЕШЕН отчет и НЕ се изпраща към НАП.
+            // Само Z-отчетът (дневен финансов отчет) се изпраща автоматично от фискалното устройство.
+            // Този метод е за проследяване/логиране на вътрешни отчети.
+            //
+            // В реална система:
+            // - X-отчетът се използва само за управление и контрол в магазина
+            // - Z-отчетът се изпраща автоматично от фискалното устройство към НАП
             
-            log.info("Shift report {} sent to NAP successfully", report.getReportNumber());
+            log.info("Shift report (X-report) {} logged successfully", report.getReportNumber());
             log.info("Report details: Cashier={}, Device={}, Total Sales={}", 
                     report.getCashierName(), report.getDeviceSerialNumber(), report.getTotalSales());
             
@@ -1012,5 +1048,253 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             log.error("Error sending shift report to NAP: {}", e.getMessage(), e);
             return false;
         }
+    }
+    
+    @Override
+    public String exportReportToXML(Long reportId) {
+        FiscalReportEntity report = fiscalReportRepository.findById(reportId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
+                        "Report not found with id: " + reportId));
+        return generateXMLFromReport(report);
+    }
+    
+    @Override
+    public String exportReportToXML(String reportNumber) {
+        FiscalReportEntity report = fiscalReportRepository.findByReportNumber(reportNumber)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
+                        "Report not found with number: " + reportNumber));
+        return generateXMLFromReport(report);
+    }
+    
+    private String generateXMLFromReport(FiscalReportEntity report) {
+        try {
+            StringBuilder xml = new StringBuilder();
+            xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            xml.append("<FiscalReport xmlns=\"http://www.nap.bg/fiscal/report\">\n");
+            
+            // Header information
+            xml.append("  <Header>\n");
+            xml.append("    <ReportNumber>").append(escapeXml(report.getReportNumber())).append("</ReportNumber>\n");
+            xml.append("    <ReportType>").append(escapeXml(report.getReportType().name())).append("</ReportType>\n");
+            xml.append("    <ReportDate>").append(report.getReportDate().toString()).append("</ReportDate>\n");
+            xml.append("    <GeneratedAt>").append(report.getGeneratedAt().toString()).append("</GeneratedAt>\n");
+            xml.append("    <Status>").append(escapeXml(report.getStatus().name())).append("</Status>\n");
+            if (report.getDeviceSerialNumber() != null) {
+                xml.append("    <DeviceSerialNumber>").append(escapeXml(report.getDeviceSerialNumber())).append("</DeviceSerialNumber>\n");
+            }
+            if (report.getCashierName() != null) {
+                xml.append("    <CashierName>").append(escapeXml(report.getCashierName())).append("</CashierName>\n");
+            }
+            xml.append("  </Header>\n");
+            
+            // Financial summary
+            xml.append("  <FinancialSummary>\n");
+            xml.append("    <TotalReceipts>").append(report.getTotalReceipts() != null ? report.getTotalReceipts() : 0).append("</TotalReceipts>\n");
+            xml.append("    <TotalSales>").append(report.getTotalSales() != null ? report.getTotalSales().toString() : "0.00").append("</TotalSales>\n");
+            xml.append("    <TotalVAT>").append(report.getTotalVAT() != null ? report.getTotalVAT().toString() : "0.00").append("</TotalVAT>\n");
+            xml.append("    <TotalNetSales>").append(report.getTotalNetSales() != null ? report.getTotalNetSales().toString() : "0.00").append("</TotalNetSales>\n");
+            if (report.getCashDrawerStartAmount() != null) {
+                xml.append("    <CashDrawerStartAmount>").append(report.getCashDrawerStartAmount().toString()).append("</CashDrawerStartAmount>\n");
+            }
+            if (report.getCashDrawerEndAmount() != null) {
+                xml.append("    <CashDrawerEndAmount>").append(report.getCashDrawerEndAmount().toString()).append("</CashDrawerEndAmount>\n");
+            }
+            xml.append("  </FinancialSummary>\n");
+            
+            // Payment breakdown
+            if (report.getPaymentBreakdown() != null && !report.getPaymentBreakdown().trim().isEmpty()) {
+                xml.append("  <PaymentBreakdown>\n");
+                try {
+                    // Parse JSON payment breakdown
+                    String paymentJson = report.getPaymentBreakdown();
+                    // Simple JSON parsing for payment breakdown
+                    if (paymentJson.contains("\"CASH\"")) {
+                        xml.append("    <PaymentMethod type=\"CASH\">\n");
+                        String cashCount = extractJsonValue(paymentJson, "CASH", "count");
+                        String cashTotal = extractJsonValue(paymentJson, "CASH", "total");
+                        xml.append("      <Count>").append(cashCount != null ? cashCount : "0").append("</Count>\n");
+                        xml.append("      <Total>").append(cashTotal != null ? cashTotal : "0.00").append("</Total>\n");
+                        xml.append("    </PaymentMethod>\n");
+                    }
+                    if (paymentJson.contains("\"CARD\"")) {
+                        xml.append("    <PaymentMethod type=\"CARD\">\n");
+                        String cardCount = extractJsonValue(paymentJson, "CARD", "count");
+                        String cardTotal = extractJsonValue(paymentJson, "CARD", "total");
+                        xml.append("      <Count>").append(cardCount != null ? cardCount : "0").append("</Count>\n");
+                        xml.append("      <Total>").append(cardTotal != null ? cardTotal : "0.00").append("</Total>\n");
+                        xml.append("    </PaymentMethod>\n");
+                    }
+                    if (paymentJson.contains("\"SPLIT\"")) {
+                        xml.append("    <PaymentMethod type=\"SPLIT\">\n");
+                        String splitCount = extractJsonValue(paymentJson, "SPLIT", "count");
+                        String splitTotal = extractJsonValue(paymentJson, "SPLIT", "total");
+                        String splitCash = extractJsonValue(paymentJson, "SPLIT", "cash");
+                        String splitCard = extractJsonValue(paymentJson, "SPLIT", "card");
+                        xml.append("      <Count>").append(splitCount != null ? splitCount : "0").append("</Count>\n");
+                        xml.append("      <Total>").append(splitTotal != null ? splitTotal : "0.00").append("</Total>\n");
+                        if (splitCash != null) {
+                            xml.append("      <CashAmount>").append(splitCash).append("</CashAmount>\n");
+                        }
+                        if (splitCard != null) {
+                            xml.append("      <CardAmount>").append(splitCard).append("</CardAmount>\n");
+                        }
+                        xml.append("    </PaymentMethod>\n");
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse payment breakdown JSON: {}", e.getMessage());
+                    xml.append("    <RawData>").append(escapeXml(report.getPaymentBreakdown())).append("</RawData>\n");
+                }
+                xml.append("  </PaymentBreakdown>\n");
+            }
+            
+            // Cashier breakdown (for store daily and monthly reports)
+            if (report.getCashierBreakdown() != null && !report.getCashierBreakdown().trim().isEmpty()) {
+                xml.append("  <CashierBreakdown>\n");
+                try {
+                    // Parse JSON cashier breakdown
+                    String cashierJson = report.getCashierBreakdown();
+                    // Extract cashier entries from JSON array
+                    int startIdx = cashierJson.indexOf('[');
+                    int endIdx = cashierJson.lastIndexOf(']');
+                    if (startIdx >= 0 && endIdx > startIdx) {
+                        String arrayContent = cashierJson.substring(startIdx + 1, endIdx);
+                        // Simple parsing - find each cashier entry
+                        String[] entries = arrayContent.split("\\},\\s*\\{");
+                        for (String entry : entries) {
+                            entry = entry.replaceAll("^\\{", "").replaceAll("\\}$", "");
+                            String cashierName = extractJsonValue(entry, "cashier");
+                            String cashierOrders = extractJsonValue(entry, "ordersCount");
+                            String cashierTotal = extractJsonValue(entry, "totalAmount");
+                            
+                            if (cashierName != null) {
+                                xml.append("    <Cashier>\n");
+                                xml.append("      <Name>").append(escapeXml(cashierName)).append("</Name>\n");
+                                xml.append("      <TotalOrders>").append(cashierOrders != null ? cashierOrders : "0").append("</TotalOrders>\n");
+                                xml.append("      <TotalAmount>").append(cashierTotal != null ? cashierTotal : "0.00").append("</TotalAmount>\n");
+                                
+                                // Payment breakdown for this cashier - extract from "payments" object
+                                String paymentsJson = extractJsonValue(entry, "payments");
+                                if (paymentsJson != null) {
+                                    String cashierCashCount = extractJsonValue(paymentsJson, "CASH", "count");
+                                    String cashierCashTotal = extractJsonValue(paymentsJson, "CASH", "total");
+                                    String cashierCardCount = extractJsonValue(paymentsJson, "CARD", "count");
+                                    String cashierCardTotal = extractJsonValue(paymentsJson, "CARD", "total");
+                                    String cashierSplitCount = extractJsonValue(paymentsJson, "SPLIT", "count");
+                                    String cashierSplitTotal = extractJsonValue(paymentsJson, "SPLIT", "total");
+                                    
+                                    if (cashierCashCount != null || cashierCardCount != null || cashierSplitCount != null) {
+                                        xml.append("      <PaymentBreakdown>\n");
+                                        if (cashierCashCount != null) {
+                                            xml.append("        <PaymentMethod type=\"CASH\">\n");
+                                            xml.append("          <Count>").append(cashierCashCount).append("</Count>\n");
+                                            xml.append("          <Total>").append(cashierCashTotal != null ? cashierCashTotal : "0.00").append("</Total>\n");
+                                            xml.append("        </PaymentMethod>\n");
+                                        }
+                                        if (cashierCardCount != null) {
+                                            xml.append("        <PaymentMethod type=\"CARD\">\n");
+                                            xml.append("          <Count>").append(cashierCardCount).append("</Count>\n");
+                                            xml.append("          <Total>").append(cashierCardTotal != null ? cashierCardTotal : "0.00").append("</Total>\n");
+                                            xml.append("        </PaymentMethod>\n");
+                                        }
+                                        if (cashierSplitCount != null) {
+                                            xml.append("        <PaymentMethod type=\"SPLIT\">\n");
+                                            xml.append("          <Count>").append(cashierSplitCount).append("</Count>\n");
+                                            xml.append("          <Total>").append(cashierSplitTotal != null ? cashierSplitTotal : "0.00").append("</Total>\n");
+                                            String splitCash = extractJsonValue(paymentsJson, "SPLIT", "cash");
+                                            String splitCard = extractJsonValue(paymentsJson, "SPLIT", "card");
+                                            if (splitCash != null) {
+                                                xml.append("          <CashAmount>").append(splitCash).append("</CashAmount>\n");
+                                            }
+                                            if (splitCard != null) {
+                                                xml.append("          <CardAmount>").append(splitCard).append("</CardAmount>\n");
+                                            }
+                                            xml.append("        </PaymentMethod>\n");
+                                        }
+                                        xml.append("      </PaymentBreakdown>\n");
+                                    }
+                                }
+                                
+                                xml.append("    </Cashier>\n");
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to parse cashier breakdown JSON: {}", e.getMessage());
+                    xml.append("    <RawData>").append(escapeXml(report.getCashierBreakdown())).append("</RawData>\n");
+                }
+                xml.append("  </CashierBreakdown>\n");
+            }
+            
+            // Notes
+            if (report.getNotes() != null && !report.getNotes().trim().isEmpty()) {
+                xml.append("  <Notes>").append(escapeXml(report.getNotes())).append("</Notes>\n");
+            }
+            
+            xml.append("</FiscalReport>");
+            
+            log.info("XML generated successfully for report: {}", report.getReportNumber());
+            return xml.toString();
+            
+        } catch (Exception e) {
+            log.error("Error generating XML from report: {}", e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
+                    "Грешка при генериране на XML: " + e.getMessage());
+        }
+    }
+    
+    private String escapeXml(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("&", "&amp;")
+                  .replace("<", "&lt;")
+                  .replace(">", "&gt;")
+                  .replace("\"", "&quot;")
+                  .replace("'", "&apos;");
+    }
+    
+    private String extractJsonValue(String json, String key) {
+        try {
+            // Try string value first
+            String pattern = "\"" + key + "\"\\s*:\\s*\"([^\"]+)\"";
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) {
+                return m.group(1);
+            }
+            // Try numeric value (integer or decimal)
+            pattern = "\"" + key + "\"\\s*:\\s*([0-9.]+)";
+            p = java.util.regex.Pattern.compile(pattern);
+            m = p.matcher(json);
+            if (m.find()) {
+                return m.group(1);
+            }
+            // Try object value (for nested objects like "payments")
+            pattern = "\"" + key + "\"\\s*:\\s*\\{([^}]+(?:\\{[^}]*\\}[^}]*)*)\\}";
+            p = java.util.regex.Pattern.compile(pattern);
+            m = p.matcher(json);
+            if (m.find()) {
+                return "{" + m.group(1) + "}";
+            }
+        } catch (Exception e) {
+            log.debug("Failed to extract JSON value for key {}: {}", key, e.getMessage());
+        }
+        return null;
+    }
+    
+    private String extractJsonValue(String json, String parentKey, String childKey) {
+        try {
+            // Find the parent object first - handle nested objects
+            String parentPattern = "\"" + parentKey + "\"\\s*:\\s*\\{([^}]+(?:\\{[^}]*\\}[^}]*)*)\\}";
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(parentPattern);
+            java.util.regex.Matcher m = p.matcher(json);
+            if (m.find()) {
+                String parentContent = m.group(1);
+                return extractJsonValue(parentContent, childKey);
+            }
+        } catch (Exception e) {
+            log.debug("Failed to extract JSON value for {}.{}: {}", parentKey, childKey, e.getMessage());
+        }
+        return null;
     }
 }

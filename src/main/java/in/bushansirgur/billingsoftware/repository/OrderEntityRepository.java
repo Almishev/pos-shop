@@ -29,6 +29,8 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
     List<OrderEntity> findRecentOrders(Pageable pageable);
 
     List<OrderEntity> findAllByCreatedAtBetweenOrderByCreatedAtAsc(LocalDateTime from, LocalDateTime to);
+    
+    List<OrderEntity> findAllByCreatedAtBeforeOrderByCreatedAtAsc(LocalDateTime cutoff);
 
     @Query("SELECT o FROM OrderEntity o WHERE (:q IS NULL OR LOWER(o.orderId) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.customerName) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.phoneNumber) LIKE LOWER(CONCAT('%', :q, '%'))) AND (:from IS NULL OR o.createdAt >= :from) AND (:to IS NULL OR o.createdAt <= :to)")
     Page<OrderEntity> searchOrders(@Param("q") String q,

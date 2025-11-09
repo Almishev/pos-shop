@@ -45,6 +45,46 @@ public class OrderArchiverServiceImpl implements OrderArchiverService {
     }
 
     @Override
+    public int archiveOrdersBefore(LocalDate cutoffDate) {
+        if (!enabled) return 0;
+        
+        LocalDateTime cutoffDateTime = cutoffDate.atStartOfDay();
+        List<OrderEntity> orders = orderRepository.findAllByCreatedAtBeforeOrderByCreatedAtAsc(cutoffDateTime);
+        
+        if (orders.isEmpty()) return 0;
+        
+        // Group orders by month for organized S3 storage
+        java.util.Map<YearMonth, java.util.List<OrderEntity>> ordersByMonth = orders.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                    o -> YearMonth.from(o.getCreatedAt().toLocalDate())
+                ));
+        
+        int totalArchived = 0;
+        for (java.util.Map.Entry<YearMonth, java.util.List<OrderEntity>> entry : ordersByMonth.entrySet()) {
+            YearMonth ym = entry.getKey();
+            List<OrderEntity> monthOrders = entry.getValue();
+            
+            String key = String.format("%s/year=%04d/month=%02d/orders-%s.jsonl.gz", 
+                    prefix, ym.getYear(), ym.getMonthValue(), 
+                    ym.format(DateTimeFormatter.ofPattern("yyyy-MM")));
+            
+            byte[] gz = toJsonlGzip(monthOrders);
+            s3Client.putObject(PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .contentType("application/gzip")
+                    .build(), 
+                    RequestBody.fromBytes(gz));
+            
+            // Delete after successful archive
+            monthOrders.forEach(orderRepository::delete);
+            totalArchived += monthOrders.size();
+        }
+        
+        return totalArchived;
+    }
+
+    @Override
     public int exportMonth(int year, int month) {
         YearMonth ym = YearMonth.of(year, month);
         LocalDateTime from = ym.atDay(1).atStartOfDay();

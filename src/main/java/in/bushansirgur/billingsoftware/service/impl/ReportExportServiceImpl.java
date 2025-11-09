@@ -6,7 +6,7 @@ import in.bushansirgur.billingsoftware.repository.UserRepository;
 import in.bushansirgur.billingsoftware.service.ReportExportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
+// import org.springframework.scheduling.annotation.Scheduled; // Commented out - scheduled task is disabled
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -42,12 +42,25 @@ public class ReportExportServiceImpl implements ReportExportService {
         LocalDateTime toDt = to.atTime(23,59,59);
         List<OrderEntity> orders = orderRepository.findAllByCreatedAtBetweenOrderByCreatedAtAsc(fromDt, toDt);
         String csv = toCsv(orders);
+        
+        // Add UTF-8 BOM (Byte Order Mark) so Excel recognizes UTF-8 encoding correctly
+        // BOM helps Excel and other programs correctly interpret Cyrillic and other non-ASCII characters
+        byte[] bom = {(byte)0xEF, (byte)0xBB, (byte)0xBF};
+        byte[] csvBytes = csv.getBytes(StandardCharsets.UTF_8);
+        byte[] csvWithBom = new byte[bom.length + csvBytes.length];
+        System.arraycopy(bom, 0, csvWithBom, 0, bom.length);
+        System.arraycopy(csvBytes, 0, csvWithBom, bom.length, csvBytes.length);
+        
         String key = String.format("%s/orders-%s_to_%s.csv",
                 reportsPrefix,
                 from.format(DateTimeFormatter.ISO_DATE),
                 to.format(DateTimeFormatter.ISO_DATE));
-        s3Client.putObject(PutObjectRequest.builder().bucket(reportsBucket).key(key).contentType("text/csv").build(),
-                RequestBody.fromBytes(csv.getBytes(StandardCharsets.UTF_8)));
+        s3Client.putObject(PutObjectRequest.builder()
+                .bucket(reportsBucket)
+                .key(key)
+                .contentType("text/csv; charset=utf-8")
+                .build(),
+                RequestBody.fromBytes(csvWithBom));
         return key;
     }
 
@@ -115,15 +128,17 @@ public class ReportExportServiceImpl implements ReportExportService {
     }
 
     // Daily report at midnight (00:00) for NAP compliance
-    @Scheduled(cron = "${reports.daily.schedule.cron:0 0 0 * * *}")
-    public void scheduledDailyReport() {
-        try {
-            String key = generateDailyReport();
-            System.out.println("Daily report generated: " + key);
-        } catch (Exception e) {
-            System.err.println("Failed to generate daily report: " + e.getMessage());
-        }
-    }
+    // DISABLED - Reports are now generated manually only
+    // To re-enable: uncomment the @Scheduled annotation and method below
+    // @Scheduled(cron = "${reports.daily.schedule.cron:0 0 0 * * *}")
+    // public void scheduledDailyReport() {
+    //     try {
+    //         String key = generateDailyReport();
+    //         System.out.println("Daily report generated: " + key);
+    //     } catch (Exception e) {
+    //         System.err.println("Failed to generate daily report: " + e.getMessage());
+    //     }
+    // }
 }
 
 

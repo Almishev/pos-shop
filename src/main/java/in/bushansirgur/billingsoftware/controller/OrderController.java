@@ -69,8 +69,13 @@ public class OrderController {
 
     @PostMapping("/archive/run")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public String runArchiveNow() {
-        int count = orderArchiverService.archiveOldOrders();
+    public String runArchiveNow(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate cutoffDate) {
+        int count;
+        if (cutoffDate != null) {
+            count = orderArchiverService.archiveOrdersBefore(cutoffDate);
+        } else {
+            count = orderArchiverService.archiveOldOrders();
+        }
         return "Archived and purged orders: " + count;
     }
 }

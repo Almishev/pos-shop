@@ -144,4 +144,23 @@ public class FiscalReportController {
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return ResponseEntity.ok(fiscalReportService.getTotalReceiptsForDate(date));
     }
+    
+    // Export to XML (optional feature for archiving/backup)
+    // NOTE: In real systems, fiscal devices automatically send Z-reports to NAP via internet.
+    // This XML export is supplementary for archiving, backup, or manual submission scenarios.
+    @GetMapping(value = "/{reportId}/xml", produces = "application/xml; charset=UTF-8")
+    public ResponseEntity<String> exportReportToXML(@PathVariable Long reportId) {
+        String xml = fiscalReportService.exportReportToXML(reportId);
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"report_" + reportId + ".xml\"")
+                .body(xml);
+    }
+    
+    @GetMapping(value = "/number/{reportNumber}/xml", produces = "application/xml; charset=UTF-8")
+    public ResponseEntity<String> exportReportToXMLByNumber(@PathVariable String reportNumber) {
+        String xml = fiscalReportService.exportReportToXML(reportNumber);
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"report_" + reportNumber + ".xml\"")
+                .body(xml);
+    }
 }
