@@ -128,7 +128,25 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         // Parse allowed origins from environment variable
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
-        config.setAllowedOrigins(origins);
+        
+        // Use allowedOriginPatterns instead of setAllowedOrigins to support wildcards
+        // This allows all origins from local network (192.168.80.x) for development
+        config.addAllowedOriginPattern("http://192.168.80.*:*");
+        config.addAllowedOriginPattern("http://localhost:*");
+        
+        // Also add specific origins from environment variable as patterns
+        for (String origin : origins) {
+            String trimmed = origin.trim();
+            if (!trimmed.isEmpty()) {
+                // Convert specific origins to patterns for flexibility
+                if (trimmed.contains("192.168.80")) {
+                    config.addAllowedOriginPattern("http://192.168.80.*:*");
+                } else {
+                    config.addAllowedOriginPattern(trimmed);
+                }
+            }
+        }
+        
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*")); // allow all request headers (Accept, Authorization, Content-Type, etc.)
         config.setExposedHeaders(List.of("Authorization"));
