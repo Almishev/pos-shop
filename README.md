@@ -72,4 +72,4 @@ The application uses Spring Boot configuration with the following profiles:
 
 ## 📝 License
 
-This project is proprietary software.
+This project is Anton Almishev software.
