@@ -4,11 +4,13 @@ import in.bushansirgur.billingsoftware.entity.OrderEntity;
 import in.bushansirgur.billingsoftware.entity.OrderItemEntity;
 import in.bushansirgur.billingsoftware.io.*;
 import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
+import in.bushansirgur.billingsoftware.service.CashDrawerSessionService;
 import in.bushansirgur.billingsoftware.service.InventoryService;
 import in.bushansirgur.billingsoftware.service.OrderService;
 import in.bushansirgur.billingsoftware.service.PosPaymentService;
 import in.bushansirgur.billingsoftware.io.PosPaymentIO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -17,6 +19,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -29,18 +32,32 @@ public class OrderServiceImpl implements OrderService {
     private final OrderEntityRepository orderEntityRepository; 
     private final InventoryService inventoryService;
     private final PosPaymentService posPaymentService;
+    private final CashDrawerSessionService cashDrawerSessionService;
 
     @Override
+    @Transactional
     public OrderResponse createOrder(OrderRequest request) {
-        // Забележка: Frontend вече проверява за активна cash drawer session преди да позволи достъп до страницата "Продажби"
-        // и преди да създаде поръчка. Това е достатъчно за НАП изискванията.
-        
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getName())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required to create an order");
+        }
+        String cashierUsername = auth.getName();
+
+        try {
+            cashDrawerSessionService.getActiveSession(cashierUsername, LocalDate.now());
+        } catch (ResponseStatusException ex) {
+            if (ex.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                throw new ResponseStatusException(HttpStatus.PRECONDITION_FAILED,
+                        "Няма активна касова сесия. Започнете работен ден преди продажба.");
+            }
+            throw ex;
+        }
+
         OrderEntity newOrder = convertToOrderEntity(request);
 
         PaymentDetails paymentDetails = new PaymentDetails();
         paymentDetails.setStatus(newOrder.getPaymentMethod() == PaymentMethod.CASH ?
                 PaymentDetails.PaymentStatus.COMPLETED : PaymentDetails.PaymentStatus.PENDING);
-        // handle split amounts if provided
         if (newOrder.getPaymentMethod() == PaymentMethod.SPLIT) {
             paymentDetails.setCashAmount(request.getCashAmount());
             paymentDetails.setCardAmount(request.getCardAmount());
@@ -51,26 +68,12 @@ public class OrderServiceImpl implements OrderService {
                 .map(this::convertToOrderItemEntity)
                 .collect(Collectors.toList());
         newOrder.setItems(orderItems);
-
-        // Set cashier username from authenticated principal
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.isAuthenticated()) {
-                newOrder.setCashierUsername(auth.getName());
-            }
-        } catch (Exception ignored) {}
+        newOrder.setCashierUsername(cashierUsername);
         
         newOrder = orderEntityRepository.save(newOrder);
 
-        // Decrease inventory quantities based on items in the order
-        try {
-            for (OrderRequest.OrderItemRequest itemReq : request.getCartItems()) {
-                inventoryService.processSaleTransaction(itemReq.getItemId(), itemReq.getQuantity(), newOrder.getOrderId());
-            }
-        } catch (Exception ex) {
-            // Swallow inventory error to not block order creation, but log it
-            // In production, replace with proper logger
-            System.err.println("Inventory update failed for order " + newOrder.getOrderId() + ": " + ex.getMessage());
+        for (OrderRequest.OrderItemRequest itemReq : request.getCartItems()) {
+            inventoryService.processSaleTransaction(itemReq.getItemId(), itemReq.getQuantity(), newOrder.getOrderId());
         }
 
         return convertToResponse(newOrder);

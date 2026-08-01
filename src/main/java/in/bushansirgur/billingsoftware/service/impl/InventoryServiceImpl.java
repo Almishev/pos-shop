@@ -98,14 +98,12 @@ public class InventoryServiceImpl implements InventoryService {
     @Transactional
     public InventoryResponse removeStock(InventoryRequest request) {
         ItemEntity item = getItemById(request.getItemId());
-        Integer previousQuantity = item.getStockQuantity();
-        Integer newQuantity = previousQuantity - request.getQuantity();
-        
-        // Allow negative stock for tracking purposes
-        if (newQuantity < 0) {
-            log.warn("Negative stock detected for item {}: {} -> {}", 
-                    item.getName(), previousQuantity, newQuantity);
+        Integer previousQuantity = item.getStockQuantity() != null ? item.getStockQuantity() : 0;
+        if (request.getQuantity() == null || request.getQuantity() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than 0");
         }
+        // Allow sale below recorded stock (delivery not entered yet, shelf has goods).
+        Integer newQuantity = previousQuantity - request.getQuantity();
         
         // Create transaction record
         InventoryTransactionEntity transaction = createTransaction(

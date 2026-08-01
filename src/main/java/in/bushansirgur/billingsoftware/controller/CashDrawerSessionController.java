@@ -14,17 +14,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController
-@RequestMapping({"/api/v1.0/cash-drawer", "/cash-drawer"})
+@RequestMapping("/cash-drawer")
 @RequiredArgsConstructor
-// CORS is handled globally in SecurityConfig - no need for @CrossOrigin here
 public class CashDrawerSessionController {
     
     private final CashDrawerSessionService cashDrawerSessionService;
     
-    // Започване на работен ден
     @PostMapping("/start")
     public ResponseEntity<CashDrawerSessionResponse> startWorkDay(@RequestBody CashDrawerSessionRequest request) {
-        // Автоматично попълване на касиера от authentication
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             request.setCashierUsername(authentication.getName());
@@ -34,7 +31,6 @@ public class CashDrawerSessionController {
         return ResponseEntity.ok(response);
     }
     
-    // Приключване на работен ден
     @PostMapping("/end/{sessionId}")
     public ResponseEntity<CashDrawerSessionResponse> endWorkDay(
             @PathVariable Long sessionId, 
@@ -44,7 +40,6 @@ public class CashDrawerSessionController {
         return ResponseEntity.ok(response);
     }
     
-    // Получаване на активна сесия за текущия касиер
     @GetMapping("/active")
     public ResponseEntity<CashDrawerSessionResponse> getActiveSession() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -61,7 +56,6 @@ public class CashDrawerSessionController {
         }
     }
     
-    // Получаване на всички сесии за текущия касиер
     @GetMapping("/my-sessions")
     public ResponseEntity<List<CashDrawerSessionResponse>> getMySessions() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -74,14 +68,12 @@ public class CashDrawerSessionController {
         return ResponseEntity.ok(sessions);
     }
     
-    // Получаване на всички активни сесии (само за админи)
     @GetMapping("/active-sessions")
     public ResponseEntity<List<CashDrawerSessionResponse>> getActiveSessions() {
         List<CashDrawerSessionResponse> sessions = cashDrawerSessionService.getActiveSessions();
         return ResponseEntity.ok(sessions);
     }
     
-    // Получаване на сесии за дата (само за админи)
     @GetMapping("/sessions/{date}")
     public ResponseEntity<List<CashDrawerSessionResponse>> getSessionsByDate(
             @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
@@ -90,14 +82,6 @@ public class CashDrawerSessionController {
         return ResponseEntity.ok(sessions);
     }
     
-    // Debug endpoint за всички сесии
-    @GetMapping("/debug/all-sessions")
-    public ResponseEntity<List<CashDrawerSessionResponse>> getAllSessions() {
-        List<CashDrawerSessionResponse> sessions = cashDrawerSessionService.getAllSessions();
-        return ResponseEntity.ok(sessions);
-    }
-    
-    // Принудително приключване на сесия (само за админи)
     @PostMapping("/force-end/{sessionId}")
     public ResponseEntity<CashDrawerSessionResponse> forceEndSession(@PathVariable Long sessionId) {
         CashDrawerSessionResponse response = cashDrawerSessionService.forceEndSession(sessionId);

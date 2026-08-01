@@ -35,68 +35,76 @@ public class SecurityConfig {
     
     @Value("${allowed.origins:http://localhost:3001,http://localhost:5173,http://192.168.80.101:3001,http://192.168.80.120:3001}")
     private String allowedOrigins;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
+        // Paths are relative to server.servlet.context-path (/api/v1.0)
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                    // Allow preflight CORS requests without authentication
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                    .requestMatchers("/login","/api/v1.0/login","encode").permitAll()
-                    .requestMatchers("/health","/api/v1.0/health").permitAll()
-                    .requestMatchers("/uploads/**", "/api/v1.0/uploads/**").permitAll()
-                    // Allow authenticated users (USER, ADMIN) to access common app resources
+                    .requestMatchers("/login", "/health").permitAll()
+                    .requestMatchers("/uploads/**").permitAll()
+
+                    // Cash drawer — specific admin rules before general
+                    .requestMatchers("/cash-drawer/force-end/**").hasRole("ADMIN")
+                    .requestMatchers(
+                            "/cash-drawer/debug/**",
+                            "/cash-drawer/active-sessions",
+                            "/cash-drawer/sessions/**"
+                    ).hasRole("ADMIN")
+                    .requestMatchers("/cash-drawer/**").hasAnyRole("USER", "ADMIN")
+
+                    // Fiscal devices — writes admin-only; reads for USER+ADMIN
+                    .requestMatchers(HttpMethod.POST, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.PUT, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.DELETE, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/admin/devices/*/status", "/admin/devices/*/ready").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/admin/devices/*/x-report", "/admin/devices/*/z-report").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/admin/devices/**").hasRole("ADMIN")
+
+                    // Fiscal receipts
+                    .requestMatchers("/admin/receipts", "/admin/receipts/**").hasAnyRole("USER", "ADMIN")
+
+                    // Fiscal reports
+                    .requestMatchers("/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
+
+                    // Labels & promotions — authenticated (not public)
+                    .requestMatchers("/admin/labels/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/admin/promotions/**").hasAnyRole("USER", "ADMIN")
+
+                    // Admin-only management
+                    .requestMatchers(
+                            "/admin/users/**",
+                            "/admin/categories/**",
+                            "/admin/inventory/**",
+                            "/admin/import/**"
+                    ).hasRole("ADMIN")
+                    .requestMatchers("/reports/**").hasRole("ADMIN")
+                    .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/inventory", "/inventory/**").hasRole("ADMIN")
+
+                    // Orders — destructive ops admin-only before general
+                    .requestMatchers(HttpMethod.DELETE, "/orders/**").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/orders/*/refund").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/orders/archive/**").hasRole("ADMIN")
+                    .requestMatchers("/orders", "/orders/**").hasAnyRole("USER", "ADMIN")
+
+                    // Catalog & loyalty & dashboard
                     .requestMatchers(
                             "/categories",
                             "/category",
                             "/items",
                             "/items/**",
-                            "/items/generate-barcode",
-                            "/items/barcode/**",
-                            "/items/search",
                             "/loyalty/**",
-                            "/api/v1.0/categories",
-                            "/api/v1.0/category",
-                            "/api/v1.0/items",
-                            "/api/v1.0/items/**",
-                            "/api/v1.0/dashboard"
+                            "/dashboard",
+                            "/dashboard/**"
                     ).hasAnyRole("USER", "ADMIN")
-                    // Orders - require authenticated USER/ADMIN
-                    .requestMatchers("/orders", "/orders/**", "/api/v1.0/orders", "/api/v1.0/orders/**").hasAnyRole("USER", "ADMIN")
-                    // Read-only fiscal device endpoints for USER and ADMIN
-                    .requestMatchers(
-                            "/admin/fiscal-devices",
-                            "/admin/devices/*/status",
-                            "/admin/devices/*/ready",
-                            "/api/v1.0/admin/fiscal-devices"
-                    ).hasAnyRole("USER", "ADMIN")
-                    // Fiscal receipts
-                    .requestMatchers("/admin/receipts", "/admin/receipts/**").hasAnyRole("USER", "ADMIN")
-                    // Force end session - admin only (MUST be before general cash-drawer rule)
-                    .requestMatchers("/api/v1.0/cash-drawer/force-end/**").hasRole("ADMIN")
-                    // Cash drawer control endpoints
-                    .requestMatchers(
-                            "/api/v1.0/cash-drawer/**"
-                    ).hasAnyRole("USER", "ADMIN")
-                    // Fiscal reports - MUST be before /reports/** rule to avoid conflicts
-                    // Allow USER to generate shift reports and view all reports; other fiscal reports stay admin-only
-                    .requestMatchers("/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
-                    .requestMatchers("/api/admin/fiscal-reports", "/api/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
-                    .requestMatchers("/api/v1.0/admin/fiscal-reports", "/api/v1.0/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
-                    // Fiscal reports stats for dashboard
-                    .requestMatchers("/admin/fiscal-reports/stats/**").hasAnyRole("USER", "ADMIN")
-                    // Label endpoints - simplify: allow without auth to avoid 403 during printing
-                    .requestMatchers("/admin/labels/**").permitAll()
-                    .requestMatchers("/api/v1.0/admin/labels/**").permitAll()
-                    // Promotions endpoints - align with labels (permit for UI calls)
-                    .requestMatchers("/admin/promotions/**").permitAll()
-                    .requestMatchers("/api/v1.0/admin/promotions/**").permitAll()
-                    .requestMatchers("/items/effective").hasAnyRole("USER", "ADMIN")
-                    // Admin-only endpoints (users, inventory, categories) - fiscal reports handled above
-                    .requestMatchers("/admin/users/**", "/api/admin/users/**", "/api/v1.0/admin/users/**", "/admin/inventory/**", "/api/admin/inventory/**", "/api/v1.0/admin/inventory/**", "/admin/categories/**", "/api/admin/categories/**", "/api/v1.0/admin/categories/**", "/reports/**", "/inventory", "/inventory/**").hasRole("ADMIN")
-                    .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
-                    // POS card payments endpoints
-                    .requestMatchers("/pos-payments/**", "/api/v1.0/pos-payments/**").hasAnyRole("USER", "ADMIN")
+
+                    // POS card payments
+                    .requestMatchers("/pos-payments/**", "/payments/**").hasAnyRole("USER", "ADMIN")
+
                     .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, accessDeniedException) -> {
@@ -126,19 +134,14 @@ public class SecurityConfig {
 
     private UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Parse allowed origins from environment variable
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
         
-        // Use allowedOriginPatterns instead of setAllowedOrigins to support wildcards
-        // This allows all origins from local network (192.168.80.x) for development
         config.addAllowedOriginPattern("http://192.168.80.*:*");
         config.addAllowedOriginPattern("http://localhost:*");
         
-        // Also add specific origins from environment variable as patterns
         for (String origin : origins) {
             String trimmed = origin.trim();
             if (!trimmed.isEmpty()) {
-                // Convert specific origins to patterns for flexibility
                 if (trimmed.contains("192.168.80")) {
                     config.addAllowedOriginPattern("http://192.168.80.*:*");
                 } else {
@@ -148,7 +151,7 @@ public class SecurityConfig {
         }
         
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*")); // allow all request headers (Accept, Authorization, Content-Type, etc.)
+        config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));
         config.setAllowCredentials(true);
 
@@ -164,6 +167,4 @@ public class SecurityConfig {
         authProvider.setPasswordEncoder(passwordEncoder());
         return new ProviderManager(authProvider);
     }
-
-
 }
