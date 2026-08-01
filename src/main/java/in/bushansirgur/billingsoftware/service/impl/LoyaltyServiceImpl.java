@@ -389,7 +389,7 @@ public class LoyaltyServiceImpl implements LoyaltyService {
             case PERCENTAGE:
                 return rule.getDiscountValue().multiply(BigDecimal.valueOf(100)) + "% отстъпка";
             case FIXED_AMOUNT:
-                return rule.getDiscountValue() + " лв. отстъпка";
+                return rule.getDiscountValue() + " € отстъпка";
             case BUY_X_GET_Y:
                 return "Купи " + rule.getBuyQuantity() + " вземи " + rule.getGetQuantity() + " безплатно";
             default:

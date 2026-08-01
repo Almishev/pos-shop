@@ -87,7 +87,7 @@ public class PromotionRuleEntity {
     
     public enum DiscountType {
         PERCENTAGE,     // 15% off
-        FIXED_AMOUNT,   // 5 BGN off
+        FIXED_AMOUNT,   // fixed EUR amount off
         BUY_X_GET_Y,    // Buy 3 get 1 free
         POINTS_REDEMPTION // Use loyalty points
     }

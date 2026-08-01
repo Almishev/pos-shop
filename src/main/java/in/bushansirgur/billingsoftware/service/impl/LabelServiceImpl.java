@@ -215,7 +215,7 @@ public class LabelServiceImpl implements LabelService {
         return String.format("""
             <div class="price-label" style="width: 30mm; height: 20mm; border: 1px solid #000; padding: 2mm; font-family: Arial, sans-serif;">
                 <div style="font-size: 8pt; font-weight: bold; text-align: center; margin-bottom: 1mm;">%s</div>
-                <div style="font-size: 10pt; font-weight: bold; text-align: center; color: #d32f2f; margin-bottom: 1mm;">%.2f лв.</div>
+                <div style="font-size: 10pt; font-weight: bold; text-align: center; color: #d32f2f; margin-bottom: 1mm;">%.2f €</div>
                 <div style="font-size: 6pt; text-align: center;">%s</div>
             </div>
             """, 
@@ -241,8 +241,8 @@ public class LabelServiceImpl implements LabelService {
         return String.format("""
             <div class="promo-label" style="width: 40mm; height: 25mm; border: 2px solid #d32f2f; padding: 2mm; font-family: Arial, sans-serif; background: #ffebee;">
                 <div style="font-size: 8pt; font-weight: bold; text-align: center; margin-bottom: 1mm;">%s</div>
-                <div style="font-size: 8pt; text-align: center; text-decoration: line-through; color: #666;">%.2f лв.</div>
-                <div style="font-size: 10pt; font-weight: bold; text-align: center; color: #d32f2f;">%.2f лв.</div>
+                <div style="font-size: 8pt; text-align: center; text-decoration: line-through; color: #666;">%.2f €</div>
+                <div style="font-size: 10pt; font-weight: bold; text-align: center; color: #d32f2f;">%.2f €</div>
                 <div style="font-size: 6pt; text-align: center; color: #d32f2f;">ПРОМОЦИЯ</div>
             </div>
             """, 

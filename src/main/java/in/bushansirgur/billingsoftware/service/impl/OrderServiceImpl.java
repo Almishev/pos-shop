@@ -114,7 +114,7 @@ public class OrderServiceImpl implements OrderService {
                     PosPaymentIO.RefundResponse rr = posPaymentService.refund(PosPaymentIO.RefundRequest.builder()
                             .originalTransactionId(originalTxnId)
                             .amount(java.math.BigDecimal.valueOf(amount))
-                            .currency("BGN")
+                            .currency("EUR")
                             .reason(request.getReason())
                             .build());
                     if (!"APPROVED".equalsIgnoreCase(rr.getStatus())) {

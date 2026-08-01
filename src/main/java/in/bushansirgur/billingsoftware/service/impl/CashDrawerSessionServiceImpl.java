@@ -50,7 +50,7 @@ public class CashDrawerSessionServiceImpl implements CashDrawerSessionService {
         }
         if (request.getStartAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
-                    "Началната сума в касата трябва да е по-голяма от 0.00 лв. според изискванията на НАП.");
+                    "Началната сума в касата трябва да е по-голяма от 0.00 € според изискванията на НАП.");
         }
         log.info("Start amount validated: {} for cashier: {}", 
                 request.getStartAmount(), request.getCashierUsername());
