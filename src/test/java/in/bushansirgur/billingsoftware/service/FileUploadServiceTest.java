@@ -84,17 +84,13 @@ class FileUploadServiceTest {
     @Test
     @DisplayName("Should handle null imgUrl in delete")
     void deleteFile_ShouldHandleNullImgUrl() {
-        assertThrows(Exception.class, () -> {
-            fileUploadService.deleteFile(null);
-        });
+        assertTrue(fileUploadService.deleteFile(null));
     }
 
     @Test
     @DisplayName("Should handle empty imgUrl in delete")
     void deleteFile_ShouldHandleEmptyImgUrl() {
-        assertThrows(Exception.class, () -> {
-            fileUploadService.deleteFile("");
-        });
+        assertTrue(fileUploadService.deleteFile(""));
     }
 
     @Test

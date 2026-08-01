@@ -12,13 +12,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(classes = BillingsoftwareApplication.class)
@@ -32,13 +33,13 @@ class CategoryServiceIntegrationTest {
     private CategoryRepository categoryRepository;
 
     @MockBean
-    private MultipartFile multipartFile;
+    private FileUploadService fileUploadService;
 
     private CategoryRequest categoryRequest;
+    private MultipartFile multipartFile;
 
     @BeforeEach
     void setUp() {
-        
         categoryRepository.deleteAll();
 
         categoryRequest = CategoryRequest.builder()
@@ -47,27 +48,29 @@ class CategoryServiceIntegrationTest {
                 .bgColor("#FF5733")
                 .build();
 
-        when(multipartFile.getOriginalFilename()).thenReturn("test-image.jpg");
-        when(multipartFile.getContentType()).thenReturn("image/jpeg");
+        multipartFile = new MockMultipartFile(
+                "file",
+                "test-image.jpg",
+                "image/jpeg",
+                "test image content".getBytes()
+        );
+
+        when(fileUploadService.uploadFile(any(MultipartFile.class)))
+                .thenReturn("https://example.com/test-image.jpg");
+        when(fileUploadService.deleteFile(any())).thenReturn(true);
     }
 
     @AfterEach
     void tearDown() {
-       
         categoryRepository.deleteAll();
     }
 
     @Test
     @DisplayName("Should save and retrieve category from database")
-    void shouldSaveAndRetrieveCategoryFromDatabase() throws IOException {
-      
-        when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
-
-      
+    void shouldSaveAndRetrieveCategoryFromDatabase() throws Exception {
         CategoryResponse savedCategory = categoryService.add(categoryRequest, multipartFile);
         List<CategoryResponse> allCategories = categoryService.read();
 
-    
         assertNotNull(savedCategory);
         assertNotNull(savedCategory.getCategoryId());
         assertEquals(categoryRequest.getName(), savedCategory.getName());
@@ -76,7 +79,7 @@ class CategoryServiceIntegrationTest {
         assertNotNull(savedCategory.getImgUrl());
         assertNotNull(savedCategory.getCreatedAt());
         assertNotNull(savedCategory.getUpdatedAt());
-        assertEquals(0, savedCategory.getItems()); // Няма продукти в категорията
+        assertEquals(0, savedCategory.getItems());
 
         assertEquals(1, allCategories.size());
         assertEquals(savedCategory.getCategoryId(), allCategories.get(0).getCategoryId());
@@ -84,10 +87,7 @@ class CategoryServiceIntegrationTest {
 
     @Test
     @DisplayName("Should save multiple categories and retrieve all")
-    void shouldSaveMultipleCategoriesAndRetrieveAll() throws IOException {
-        
-        when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
-
+    void shouldSaveMultipleCategoriesAndRetrieveAll() throws Exception {
         CategoryRequest categoryRequest2 = CategoryRequest.builder()
                 .name("Test Books")
                 .description("Test books and literature")
@@ -107,17 +107,13 @@ class CategoryServiceIntegrationTest {
 
     @Test
     @DisplayName("Should delete category from database")
-    void shouldDeleteCategoryFromDatabase() throws IOException {
-       
-        when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
+    void shouldDeleteCategoryFromDatabase() throws Exception {
         CategoryResponse savedCategory = categoryService.add(categoryRequest, multipartFile);
         String categoryId = savedCategory.getCategoryId();
 
-       
         categoryService.delete(categoryId);
         List<CategoryResponse> allCategories = categoryService.read();
 
-        
         assertEquals(0, allCategories.size());
         assertTrue(categoryRepository.findByCategoryId(categoryId).isEmpty());
     }
@@ -125,47 +121,32 @@ class CategoryServiceIntegrationTest {
     @Test
     @DisplayName("Should throw exception when deleting non-existent category")
     void shouldThrowExceptionWhenDeletingNonExistentCategory() {
-       
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            categoryService.delete("non-existent-id");
-        });
+        RuntimeException exception = assertThrows(RuntimeException.class, () ->
+                categoryService.delete("non-existent-id"));
 
         assertEquals("Category not found: non-existent-id", exception.getMessage());
     }
 
     @Test
     @DisplayName("Should handle unique constraint on category name")
-    void shouldHandleUniqueConstraintOnCategoryName() throws IOException {
-       
-        when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
-
-    
+    void shouldHandleUniqueConstraintOnCategoryName() throws Exception {
         categoryService.add(categoryRequest, multipartFile);
 
-    
         CategoryRequest duplicateRequest = CategoryRequest.builder()
-                .name(categoryRequest.getName()) 
+                .name(categoryRequest.getName())
                 .description("Different description")
                 .bgColor("#000000")
                 .build();
 
-        
-        assertThrows(Exception.class, () -> {
-            categoryService.add(duplicateRequest, multipartFile);
-        });
+        assertThrows(Exception.class, () ->
+                categoryService.add(duplicateRequest, multipartFile));
     }
-
-
 
     @Test
     @DisplayName("Should verify category entity persistence")
-    void shouldVerifyCategoryEntityPersistence() throws IOException {
-       
-        when(multipartFile.getBytes()).thenReturn("test image content".getBytes());
-
+    void shouldVerifyCategoryEntityPersistence() throws Exception {
         CategoryResponse savedCategory = categoryService.add(categoryRequest, multipartFile);
-        
-       
+
         CategoryEntity persistedEntity = categoryRepository.findByCategoryId(savedCategory.getCategoryId()).orElse(null);
 
         assertNotNull(persistedEntity);

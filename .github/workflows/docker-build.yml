@@ -52,21 +52,6 @@ jobs:
   test-backend:
     runs-on: ubuntu-latest
     
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: billing_app_test
-          POSTGRES_USER: user1
-          POSTGRES_PASSWORD: asroma
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -87,14 +72,9 @@ jobs:
     - name: Make Maven wrapper executable
       run: chmod +x ./mvnw
     
+    # Tests use H2 via application-test.properties — do not override SPRING_DATASOURCE_*
     - name: Run backend tests
       run: ./mvnw clean test
-      env:
-        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/billing_app_test
-        SPRING_DATASOURCE_USERNAME: user1
-        SPRING_DATASOURCE_PASSWORD: asroma
-        SPRING_JPA_HIBERNATE_DDL_AUTO: create-drop
-        SPRING_JPA_SHOW_SQL: false
 
   security-scan:
     runs-on: ubuntu-latest
