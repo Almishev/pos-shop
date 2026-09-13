@@ -9,8 +9,11 @@ import in.bushansirgur.billingsoftware.repository.InventoryAdjustmentRepository;
 import in.bushansirgur.billingsoftware.repository.InventoryAlertRepository;
 import in.bushansirgur.billingsoftware.repository.InventoryTransactionRepository;
 import in.bushansirgur.billingsoftware.repository.ItemRepository;
+import in.bushansirgur.billingsoftware.repository.PromotionRepository;
+import in.bushansirgur.billingsoftware.repository.StockMovementRepository;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,8 @@ public class ItemServiceImpl implements ItemService {
     private final InventoryTransactionRepository inventoryTransactionRepository;
     private final InventoryAlertRepository inventoryAlertRepository;
     private final InventoryAdjustmentRepository inventoryAdjustmentRepository;
+    private final PromotionRepository promotionRepository;
+    private final StockMovementRepository stockMovementRepository;
 
     @Override
     public ItemResponse add(ItemRequest request, MultipartFile file) throws IOException {
@@ -261,13 +266,22 @@ public class ItemServiceImpl implements ItemService {
     @Transactional
     public void deleteItem(String itemId) {
         ItemEntity existingItem = itemRepository.findByItemId(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found: "+itemId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found: " + itemId));
 
-        // Remove warehouse records so deleted items don't remain in inventory views/alerts
+        // Remove dependent records before deleting the item
         inventoryTransactionRepository.deleteByItemId(itemId);
         inventoryAlertRepository.deleteByItemId(itemId);
         inventoryAdjustmentRepository.deleteByItemId(itemId);
+        stockMovementRepository.deleteByItemId(itemId);
+        promotionRepository.deleteByItem_Id(existingItem.getId());
 
-        itemRepository.delete(existingItem);
+        try {
+            itemRepository.delete(existingItem);
+            itemRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Не може да се изтрие продуктът, защото се ползва в други записи (поръчки, доставки и т.н.).",
+                    ex);
+        }
     }
 }

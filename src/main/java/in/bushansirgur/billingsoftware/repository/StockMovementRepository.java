@@ -23,4 +23,6 @@ public interface StockMovementRepository extends JpaRepository<StockMovementEnti
     
     @Query("SELECT s FROM StockMovementEntity s ORDER BY s.createdAt DESC")
     List<StockMovementEntity> findRecentMovements();
+
+    void deleteByItemId(String itemId);
 }

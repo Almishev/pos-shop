@@ -18,6 +18,8 @@ public interface PromotionRepository extends JpaRepository<PromotionEntity, Long
         List<PromotionEntity> list = findActiveForItem(itemId, now);
         return list == null || list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
+
+    void deleteByItem_Id(Long itemId);
 }
 
 
