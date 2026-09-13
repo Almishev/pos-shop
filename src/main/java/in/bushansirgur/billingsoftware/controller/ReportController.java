@@ -1,5 +1,6 @@
 package in.bushansirgur.billingsoftware.controller;
 
+import in.bushansirgur.billingsoftware.io.ArchiveDestination;
 import in.bushansirgur.billingsoftware.service.ReportExportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -19,16 +20,11 @@ public class ReportController {
     @PostMapping("/export")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public String exportOrders(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
-                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
-        String key = reportExportService.exportOrdersCsv(dateFrom, dateTo);
-        return "Report generated: s3://" + key;
-    }
-
-    @PostMapping("/daily")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public String generateDailyReport() {
-        String key = reportExportService.generateDailyReport();
-        return "Daily report generated: s3://" + key;
+                               @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+                               @RequestParam(defaultValue = "local") String destination) {
+        ArchiveDestination dest = ArchiveDestination.from(destination);
+        String location = reportExportService.exportOrdersCsv(dateFrom, dateTo, dest);
+        return "Report generated: " + location;
     }
 
     @GetMapping("/cashiers")
@@ -38,5 +34,3 @@ public class ReportController {
         return reportExportService.getCashierSummaries(dateFrom, dateTo);
     }
 }
-
-

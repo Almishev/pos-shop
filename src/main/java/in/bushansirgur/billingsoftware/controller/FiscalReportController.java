@@ -2,10 +2,12 @@ package in.bushansirgur.billingsoftware.controller;
 
 import in.bushansirgur.billingsoftware.io.FiscalReportRequest;
 import in.bushansirgur.billingsoftware.io.FiscalReportResponse;
+import in.bushansirgur.billingsoftware.service.FiscalReportArchiverService;
 import in.bushansirgur.billingsoftware.service.FiscalReportService;
 import in.bushansirgur.billingsoftware.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -21,14 +23,10 @@ import java.util.List;
 public class FiscalReportController {
     
     private final FiscalReportService fiscalReportService;
+    private final FiscalReportArchiverService fiscalReportArchiverService;
     private final UserRepository userRepository;
     
     // Генериране на отчети
-    @PostMapping("/daily")
-    public ResponseEntity<FiscalReportResponse> generateDailyReport(@RequestBody FiscalReportRequest request) {
-        return ResponseEntity.ok(fiscalReportService.generateDailyReport(request));
-    }
-    
     @PostMapping("/shift")
     public ResponseEntity<FiscalReportResponse> generateShiftReport(@RequestBody FiscalReportRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -84,8 +82,31 @@ public class FiscalReportController {
     
     // Извличане на отчети
     @GetMapping
-    public ResponseEntity<List<FiscalReportResponse>> getAllReports() {
-        return ResponseEntity.ok(fiscalReportService.getAllReports());
+    public ResponseEntity<org.springframework.data.domain.Page<FiscalReportResponse>> getReports(
+            @org.springframework.data.web.PageableDefault(size = 20, sort = {"generatedAt", "id"},
+                    direction = org.springframework.data.domain.Sort.Direction.DESC)
+            org.springframework.data.domain.Pageable pageable,
+            @RequestParam(value = "type", required = false) String type,
+            @RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(value = "dateTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo
+    ) {
+        return ResponseEntity.ok(fiscalReportService.getReportsPage(pageable, type, dateFrom, dateTo));
+    }
+
+    @PostMapping("/archive/run")
+    @ResponseStatus(HttpStatus.OK)
+    public String archiveReports(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate cutoffDate,
+            @RequestParam(defaultValue = "local") String destination
+    ) {
+        var dest = in.bushansirgur.billingsoftware.io.ArchiveDestination.from(destination);
+        int count;
+        if (cutoffDate != null) {
+            count = fiscalReportArchiverService.archiveReportsBefore(cutoffDate, dest);
+        } else {
+            count = fiscalReportArchiverService.archiveOldReports(dest);
+        }
+        return "Archived and purged fiscal reports: " + count + " (" + dest.name().toLowerCase() + ")";
     }
     
     @GetMapping("/{reportId}")
@@ -124,25 +145,6 @@ public class FiscalReportController {
     @PostMapping("/number/{reportNumber}/send-to-naf")
     public ResponseEntity<Boolean> sendReportToNAFByNumber(@PathVariable String reportNumber) {
         return ResponseEntity.ok(fiscalReportService.sendReportToNAF(reportNumber));
-    }
-    
-    // Статистика
-    @GetMapping("/stats/sales/{date}")
-    public ResponseEntity<Double> getTotalSalesForDate(
-            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return ResponseEntity.ok(fiscalReportService.getTotalSalesForDate(date));
-    }
-    
-    @GetMapping("/stats/vat/{date}")
-    public ResponseEntity<Double> getTotalVATForDate(
-            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return ResponseEntity.ok(fiscalReportService.getTotalVATForDate(date));
-    }
-    
-    @GetMapping("/stats/receipts/{date}")
-    public ResponseEntity<Integer> getTotalReceiptsForDate(
-            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return ResponseEntity.ok(fiscalReportService.getTotalReceiptsForDate(date));
     }
     
     // Export to XML (optional feature for archiving/backup)

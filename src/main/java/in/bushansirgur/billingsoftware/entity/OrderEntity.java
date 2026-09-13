@@ -49,7 +49,7 @@ public class OrderEntity {
     private PaymentMethod paymentMethod;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "order_status")
+    @Column(name = "order_status", length = 32)
     private OrderStatus status;
 
     // Reference to original order if this record represents a refund/void

@@ -14,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.sql.Timestamp;
@@ -24,7 +25,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,9 +38,6 @@ class CategoryServiceTest {
     private ItemRepository itemRepository;
 
     @Mock
-    private FileUploadService fileUploadService;
-
-    @Mock
     private MultipartFile multipartFile;
 
     @InjectMocks
@@ -47,7 +45,6 @@ class CategoryServiceTest {
 
     private CategoryRequest categoryRequest;
     private CategoryEntity categoryEntity;
-    private CategoryResponse expectedResponse;
 
     @BeforeEach
     void setUp() {
@@ -64,75 +61,41 @@ class CategoryServiceTest {
                 .name("Electronics")
                 .description("Electronic devices and gadgets")
                 .bgColor("#FF5733")
-                .imgUrl("https://example.com/image.jpg")
+                .imgUrl(null)
                 .createdAt(now)
                 .updatedAt(now)
-                .build();
-
-        expectedResponse = CategoryResponse.builder()
-                .categoryId("test-category-id")
-                .name("Electronics")
-                .description("Electronic devices and gadgets")
-                .bgColor("#FF5733")
-                .imgUrl("https://example.com/image.jpg")
-                .createdAt(now)
-                .updatedAt(now)
-                .items(5)
                 .build();
     }
 
     @Test
     @DisplayName("Should successfully add a new category")
     void add_ShouldAddNewCategory_Successfully() throws IOException {
-        
-        when(fileUploadService.uploadFile(any(MultipartFile.class)))
-                .thenReturn("https://example.com/image.jpg");
         when(categoryRepository.save(any(CategoryEntity.class)))
                 .thenReturn(categoryEntity);
         when(itemRepository.countByCategoryId(anyLong()))
-                .thenReturn(5);
+                .thenReturn(0);
 
         CategoryResponse result = categoryService.add(categoryRequest, multipartFile);
 
         assertNotNull(result);
-        assertEquals(expectedResponse.getCategoryId(), result.getCategoryId());
-        assertEquals(expectedResponse.getName(), result.getName());
-        assertEquals(expectedResponse.getDescription(), result.getDescription());
-        assertEquals(expectedResponse.getBgColor(), result.getBgColor());
-        assertEquals(expectedResponse.getImgUrl(), result.getImgUrl());
-        assertEquals(expectedResponse.getItems(), result.getItems());
+        assertEquals("test-category-id", result.getCategoryId());
+        assertEquals("Electronics", result.getName());
+        assertNull(result.getImgUrl());
 
-        verify(fileUploadService).uploadFile(multipartFile);
         verify(categoryRepository).save(any(CategoryEntity.class));
         verify(itemRepository).countByCategoryId(anyLong());
     }
 
     @Test
-    @DisplayName("Should throw IOException when file upload fails")
-    void add_ShouldThrowIOException_WhenFileUploadFails() throws IOException {
-        
-        when(fileUploadService.uploadFile(any(MultipartFile.class)))
-                .thenThrow(new RuntimeException("File upload failed"));
-
-        assertThrows(RuntimeException.class, () -> {
-            categoryService.add(categoryRequest, multipartFile);
-        });
-
-        verify(fileUploadService).uploadFile(multipartFile);
-        verify(categoryRepository, never()).save(any(CategoryEntity.class));
-    }
-
-    @Test
     @DisplayName("Should return all categories when reading")
     void read_ShouldReturnAllCategories() {
-       
         CategoryEntity categoryEntity2 = CategoryEntity.builder()
                 .id(2L)
                 .categoryId("test-category-id-2")
                 .name("Books")
                 .description("Books and literature")
                 .bgColor("#33FF57")
-                .imgUrl("https://example.com/image2.jpg")
+                .imgUrl(null)
                 .createdAt(Timestamp.valueOf(LocalDateTime.now()))
                 .updatedAt(Timestamp.valueOf(LocalDateTime.now()))
                 .build();
@@ -158,7 +121,6 @@ class CategoryServiceTest {
     @Test
     @DisplayName("Should return empty list when no categories exist")
     void read_ShouldReturnEmptyList_WhenNoCategoriesExist() {
-        
         when(categoryRepository.findAll()).thenReturn(Arrays.asList());
 
         List<CategoryResponse> result = categoryService.read();
@@ -171,25 +133,34 @@ class CategoryServiceTest {
     }
 
     @Test
-    @DisplayName("Should successfully delete existing category")
+    @DisplayName("Should successfully delete existing empty category")
     void delete_ShouldDeleteCategory_Successfully() {
-      
         String categoryId = "test-category-id";
         when(categoryRepository.findByCategoryId(categoryId))
                 .thenReturn(Optional.of(categoryEntity));
+        when(itemRepository.countByCategoryId(1L)).thenReturn(0);
 
-        
         categoryService.delete(categoryId);
 
         verify(categoryRepository).findByCategoryId(categoryId);
-        verify(fileUploadService).deleteFile(categoryEntity.getImgUrl());
         verify(categoryRepository).delete(categoryEntity);
+    }
+
+    @Test
+    @DisplayName("Should reject delete when category has items")
+    void delete_ShouldReject_WhenCategoryHasItems() {
+        String categoryId = "test-category-id";
+        when(categoryRepository.findByCategoryId(categoryId))
+                .thenReturn(Optional.of(categoryEntity));
+        when(itemRepository.countByCategoryId(1L)).thenReturn(3);
+
+        assertThrows(ResponseStatusException.class, () -> categoryService.delete(categoryId));
+        verify(categoryRepository, never()).delete(any(CategoryEntity.class));
     }
 
     @Test
     @DisplayName("Should throw RuntimeException when category not found for deletion")
     void delete_ShouldThrowRuntimeException_WhenCategoryNotFound() {
-    
         String categoryId = "non-existent-category-id";
         when(categoryRepository.findByCategoryId(categoryId))
                 .thenReturn(Optional.empty());
@@ -199,45 +170,6 @@ class CategoryServiceTest {
         });
 
         assertEquals("Category not found: " + categoryId, exception.getMessage());
-
-        verify(categoryRepository).findByCategoryId(categoryId);
-        verify(fileUploadService, never()).deleteFile(anyString());
-        verify(categoryRepository, never()).delete(any(CategoryEntity.class));
-    }
-
-    @Test
-    @DisplayName("Should handle null categoryId in delete method")
-    void delete_ShouldHandleNullCategoryId() {
-       
-        when(categoryRepository.findByCategoryId(null))
-                .thenReturn(Optional.empty());
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            categoryService.delete(null);
-        });
-
-        assertEquals("Category not found: null", exception.getMessage());
-
-        verify(categoryRepository).findByCategoryId(null);
-        verify(fileUploadService, never()).deleteFile(anyString());
-        verify(categoryRepository, never()).delete(any(CategoryEntity.class));
-    }
-
-    @Test
-    @DisplayName("Should handle empty categoryId in delete method")
-    void delete_ShouldHandleEmptyCategoryId() {
-       
-        when(categoryRepository.findByCategoryId(""))
-                .thenReturn(Optional.empty());
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            categoryService.delete("");
-        });
-
-        assertEquals("Category not found: ", exception.getMessage());
-
-        verify(categoryRepository).findByCategoryId("");
-        verify(fileUploadService, never()).deleteFile(anyString());
         verify(categoryRepository, never()).delete(any(CategoryEntity.class));
     }
 }

@@ -32,4 +32,7 @@ public interface InventoryService {
     // Automatic operations
     void processSaleTransaction(String itemId, Integer quantity, String orderId);
     void processPurchaseTransaction(String itemId, Integer quantity, String purchaseOrderId);
+    /** Restock from customer return/refund — does not require delivery unit price or change costPrice.
+     *  Looks up by itemId, then barcode. Returns false if neither exists (refund can still proceed). */
+    boolean processReturnTransaction(String itemId, String barcode, Integer quantity, String refundReference);
 }

@@ -22,8 +22,4 @@ public interface ItemService {
     List<ItemResponse> searchItems(String searchTerm);
 
     void deleteItem(String itemId);
-    
-    void generateMissingItemIds();
-    
-    List<in.bushansirgur.billingsoftware.entity.ItemEntity> getAllItemsForDebug();
 }

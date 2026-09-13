@@ -51,6 +51,11 @@ public class OrderController {
         return orderService.getLatestOrders();
     }
 
+    @GetMapping("/{orderId}")
+    public OrderResponse getOrderById(@PathVariable String orderId) {
+        return orderService.getOrderById(orderId);
+    }
+
     @GetMapping
     public Page<OrderResponse> getOrders(
             @PageableDefault(size = 20, sort = "createdAt", direction = org.springframework.data.domain.Sort.Direction.DESC) Pageable pageable,
@@ -69,17 +74,20 @@ public class OrderController {
 
     @PostMapping("/archive/run")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public String runArchiveNow(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate cutoffDate) {
+    public String runArchiveNow(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate cutoffDate,
+            @RequestParam(defaultValue = "local") String destination
+    ) {
+        var dest = in.bushansirgur.billingsoftware.io.ArchiveDestination.from(destination);
         int count;
         if (cutoffDate != null) {
-            count = orderArchiverService.archiveOrdersBefore(cutoffDate);
+            count = orderArchiverService.archiveOrdersBefore(cutoffDate, dest);
         } else {
-            count = orderArchiverService.archiveOldOrders();
+            count = orderArchiverService.archiveOldOrders(dest);
         }
-        return "Archived and purged orders: " + count;
+        return "Archived and purged orders: " + count + " (" + dest.name().toLowerCase() + ")";
     }
 }
-
 
 
 

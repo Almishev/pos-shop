@@ -6,11 +6,12 @@ import in.bushansirgur.billingsoftware.io.CategoryResponse;
 import in.bushansirgur.billingsoftware.repository.CategoryRepository;
 import in.bushansirgur.billingsoftware.repository.ItemRepository;
 import in.bushansirgur.billingsoftware.service.CategoryService;
-import in.bushansirgur.billingsoftware.service.FileUploadService;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.List;
@@ -23,20 +24,23 @@ public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final ItemRepository itemRepository;
-    private final FileUploadService fileUploadService;
 
     public CategoryResponse add(CategoryRequest request, MultipartFile file) throws IOException {
-        String imgUrl = null;
-        if (file != null && !file.isEmpty()) {
-            imgUrl = fileUploadService.uploadFile(file);
-        } else {
-            // Set default supermarket image URL if no file is provided
-            imgUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
-        }
         CategoryEntity newCategory = convertToEntity(request);
-        newCategory.setImgUrl(imgUrl);
+        newCategory.setImgUrl(null);
         newCategory = categoryRepository.save(newCategory);
         return convertToResponse(newCategory);
+    }
+
+    @Override
+    public CategoryResponse update(String categoryId, CategoryRequest request, MultipartFile file) throws IOException {
+        CategoryEntity existing = categoryRepository.findByCategoryId(categoryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found: " + categoryId));
+        existing.setName(request.getName());
+        existing.setDescription(request.getDescription());
+        existing.setBgColor(request.getBgColor());
+        existing.setImgUrl(null);
+        return convertToResponse(categoryRepository.save(existing));
     }
 
     @Override
@@ -51,10 +55,10 @@ public class CategoryServiceImpl implements CategoryService {
     public void delete(String categoryId) {
         CategoryEntity existingCategory = categoryRepository.findByCategoryId(categoryId)
                 .orElseThrow(() -> new RuntimeException("Category not found: "+categoryId));
-        // Only delete image if it's not the default image
-        String defaultImageUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
-        if (existingCategory.getImgUrl() != null && !existingCategory.getImgUrl().equals(defaultImageUrl)) {
-            fileUploadService.deleteFile(existingCategory.getImgUrl());
+        Integer itemsCount = itemRepository.countByCategoryId(existingCategory.getId());
+        if (itemsCount != null && itemsCount > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot delete category with existing items (" + itemsCount + ")");
         }
         categoryRepository.delete(existingCategory);
     }

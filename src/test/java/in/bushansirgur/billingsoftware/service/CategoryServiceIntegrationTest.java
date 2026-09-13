@@ -11,7 +11,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.multipart.MultipartFile;
@@ -19,8 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest(classes = BillingsoftwareApplication.class)
 @ActiveProfiles("test")
@@ -31,9 +28,6 @@ class CategoryServiceIntegrationTest {
 
     @Autowired
     private CategoryRepository categoryRepository;
-
-    @MockBean
-    private FileUploadService fileUploadService;
 
     private CategoryRequest categoryRequest;
     private MultipartFile multipartFile;
@@ -54,10 +48,6 @@ class CategoryServiceIntegrationTest {
                 "image/jpeg",
                 "test image content".getBytes()
         );
-
-        when(fileUploadService.uploadFile(any(MultipartFile.class)))
-                .thenReturn("https://example.com/test-image.jpg");
-        when(fileUploadService.deleteFile(any())).thenReturn(true);
     }
 
     @AfterEach
@@ -76,7 +66,7 @@ class CategoryServiceIntegrationTest {
         assertEquals(categoryRequest.getName(), savedCategory.getName());
         assertEquals(categoryRequest.getDescription(), savedCategory.getDescription());
         assertEquals(categoryRequest.getBgColor(), savedCategory.getBgColor());
-        assertNotNull(savedCategory.getImgUrl());
+        assertNull(savedCategory.getImgUrl());
         assertNotNull(savedCategory.getCreatedAt());
         assertNotNull(savedCategory.getUpdatedAt());
         assertEquals(0, savedCategory.getItems());
@@ -153,7 +143,7 @@ class CategoryServiceIntegrationTest {
         assertEquals(categoryRequest.getName(), persistedEntity.getName());
         assertEquals(categoryRequest.getDescription(), persistedEntity.getDescription());
         assertEquals(categoryRequest.getBgColor(), persistedEntity.getBgColor());
-        assertNotNull(persistedEntity.getImgUrl());
+        assertNull(persistedEntity.getImgUrl());
         assertNotNull(persistedEntity.getCreatedAt());
         assertNotNull(persistedEntity.getUpdatedAt());
         assertNotNull(persistedEntity.getCategoryId());

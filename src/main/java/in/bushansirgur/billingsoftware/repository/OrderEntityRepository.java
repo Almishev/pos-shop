@@ -17,6 +17,8 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
 
     Optional<OrderEntity> findByOrderId(String orderId);
 
+    List<OrderEntity> findByOriginalOrderId(String originalOrderId);
+
     List<OrderEntity> findAllByOrderByCreatedAtDesc();
 
     @Query("SELECT SUM(o.grandTotal) FROM OrderEntity o WHERE DATE(o.createdAt) = :date")
@@ -32,7 +34,7 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
     
     List<OrderEntity> findAllByCreatedAtBeforeOrderByCreatedAtAsc(LocalDateTime cutoff);
 
-    @Query("SELECT o FROM OrderEntity o WHERE (:q IS NULL OR LOWER(o.orderId) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.customerName) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.phoneNumber) LIKE LOWER(CONCAT('%', :q, '%'))) AND (:from IS NULL OR o.createdAt >= :from) AND (:to IS NULL OR o.createdAt <= :to)")
+    @Query("SELECT o FROM OrderEntity o WHERE (:q = '' OR LOWER(o.orderId) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(o.customerName) LIKE LOWER(CONCAT('%', :q, '%')) OR LOWER(COALESCE(o.phoneNumber, '')) LIKE LOWER(CONCAT('%', :q, '%'))) AND o.createdAt >= :from AND o.createdAt <= :to")
     Page<OrderEntity> searchOrders(@Param("q") String q,
                                    @Param("from") LocalDateTime from,
                                    @Param("to") LocalDateTime to,
@@ -82,6 +84,14 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
     // Methods for store daily reports - calculate sales between dates
     @Query("SELECT COALESCE(SUM(o.grandTotal),0) FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to")
     Double sumSalesBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.tax),0) FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumTaxBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    @Query("SELECT COALESCE(SUM(o.tax),0) FROM OrderEntity o WHERE LOWER(TRIM(o.cashierUsername)) = LOWER(TRIM(:cashier)) AND o.createdAt >= :from AND o.createdAt <= :to")
+    Double sumTaxByCashierBetween(@Param("cashier") String cashier,
+                                  @Param("from") LocalDateTime from,
+                                  @Param("to") LocalDateTime to);
 
     @Query("SELECT COUNT(o) FROM OrderEntity o WHERE o.createdAt >= :from AND o.createdAt <= :to")
     Long countOrdersBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);

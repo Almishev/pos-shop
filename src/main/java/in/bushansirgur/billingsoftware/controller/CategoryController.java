@@ -38,6 +38,21 @@ public class CategoryController {
 
     }
 
+    @PutMapping("/admin/categories/{categoryId}")
+    public CategoryResponse updateCategory(@PathVariable String categoryId,
+                                           @RequestPart("category") String categoryString,
+                                           @RequestPart(value = "file", required = false) MultipartFile file) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            CategoryRequest request = objectMapper.readValue(categoryString, CategoryRequest.class);
+            return categoryService.update(categoryId, request, file);
+        } catch (JsonProcessingException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exception occurred while parsing the json: " + ex.getMessage());
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error occurred while processing the file: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/categories")
     public List<CategoryResponse> fetchCategories() {
         return categoryService.read();
@@ -48,8 +63,10 @@ public class CategoryController {
     public void remove(@PathVariable String categoryId) {
         try {
             categoryService.delete(categoryId);
-        }catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage());
         }
     }
 }

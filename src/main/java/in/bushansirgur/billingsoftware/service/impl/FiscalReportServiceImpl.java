@@ -14,6 +14,8 @@ import in.bushansirgur.billingsoftware.service.FiscalReportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -35,48 +37,6 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     private final CashDrawerSessionRepository cashDrawerSessionRepository;
     private final UserRepository userRepository;
     private final MainFiscalDeviceProperties mainFiscalDeviceProperties;
-    
-    @Override
-    public FiscalReportResponse generateDailyReport(FiscalReportRequest request) {
-        LocalDate reportDate = request.getReportDate() != null ? request.getReportDate() : LocalDate.now();
-        
-        // Изчисляване на статистика за деня
-        LocalDateTime startOfDay = reportDate.atStartOfDay();
-        LocalDateTime endOfDay = reportDate.atTime(LocalTime.MAX);
-        
-        List<FiscalReportEntity> existingReports = fiscalReportRepository.findByReportTypeAndDateRange(
-                FiscalReportEntity.ReportType.DAILY, reportDate, reportDate);
-        
-        if (!existingReports.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, 
-                    "Daily report for date " + reportDate + " already exists");
-        }
-        
-        // Извличане на данни за деня
-        Long totalReceipts = fiscalReceiptRepository.countByDateRange(startOfDay, endOfDay);
-        Double totalSales = fiscalReceiptRepository.sumGrandTotalByDateRange(startOfDay, endOfDay);
-        Double totalVAT = fiscalReceiptRepository.sumVatAmountByDateRange(startOfDay, endOfDay);
-        
-        // Създаване на отчета
-        FiscalReportEntity report = FiscalReportEntity.builder()
-                .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.DAILY, reportDate))
-                .reportType(FiscalReportEntity.ReportType.DAILY)
-                .reportDate(reportDate)
-                .totalReceipts(totalReceipts != null ? totalReceipts.intValue() : 0)
-                .totalSales(totalSales != null ? BigDecimal.valueOf(totalSales) : BigDecimal.ZERO)
-                .totalVAT(totalVAT != null ? BigDecimal.valueOf(totalVAT) : BigDecimal.ZERO)
-                .totalNetSales(totalSales != null && totalVAT != null ? 
-                        BigDecimal.valueOf(totalSales - totalVAT) : BigDecimal.ZERO)
-                .cashierName(request.getCashierName())
-                .deviceSerialNumber(request.getDeviceSerialNumber())
-                .notes(request.getNotes())
-                .build();
-        
-        report = fiscalReportRepository.save(report);
-        log.info("Daily report generated: {}", report.getReportNumber());
-        
-        return FiscalReportResponse.fromEntity(report);
-    }
     
     @Override
     public FiscalReportResponse generateShiftReport(FiscalReportRequest request) {
@@ -286,9 +246,19 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             }
         }
         
-        // Изчисляване на ДДС (20% от продажбите)
-        Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
-        Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
+        // ДДС от записаните поръчки (по реални ставки при продажба), същите ключове като оборота
+        final java.util.LinkedHashSet<String> vatKeys = new java.util.LinkedHashSet<>();
+        if (aggUsername != null && !aggUsername.isBlank()) vatKeys.add(aggUsername);
+        if (cashierName != null && !cashierName.isBlank()) vatKeys.add(cashierName);
+        if (resolvedSessionCashier != null && !resolvedSessionCashier.isBlank()) vatKeys.add(resolvedSessionCashier);
+        if (request.getCashierName() != null && !request.getCashierName().isBlank()) vatKeys.add(request.getCashierName());
+        double taxSum = 0.0;
+        for (String k : vatKeys) {
+            Double t = orderEntityRepository.sumTaxByCashierBetween(k, sessionFrom, sessionTo);
+            if (t != null) taxSum += t;
+        }
+        Double totalVAT = taxSum;
+        Double totalNetSales = (totalSales != null ? totalSales : 0.0) - totalVAT;
         
         // Получаване на cash drawer данни за касиера
         BigDecimal cashDrawerStartAmount = BigDecimal.ZERO;
@@ -491,6 +461,25 @@ public class FiscalReportServiceImpl implements FiscalReportService {
     @Override
     public FiscalReportResponse generateStoreDailyReport(FiscalReportRequest request) {
         LocalDate reportDate = request.getReportDate() != null ? request.getReportDate() : LocalDate.now();
+
+        // Общ дневен само ако няма отворени касови сесии (вкл. зависнали от предишен ден)
+        List<CashDrawerSessionEntity> openSessions = cashDrawerSessionRepository
+                .findByStatus(CashDrawerSessionEntity.SessionStatus.ACTIVE);
+        if (!openSessions.isEmpty()) {
+            String cashiers = openSessions.stream()
+                    .map(s -> {
+                        String who = s.getCashierUsername() != null ? s.getCashierUsername() : "?";
+                        String when = s.getSessionDate() != null ? s.getSessionDate().toString() : "";
+                        return when.isBlank() ? who : who + " (" + when + ")";
+                    })
+                    .distinct()
+                    .collect(Collectors.joining(", "));
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Не може общ дневен отчет: има неприключени смени"
+                            + (cashiers.isEmpty() ? "" : ": " + cashiers)
+                            + ". Първо всеки касиер трябва да генерира сменен отчет.");
+        }
+
         LocalDateTime startOfDay = reportDate.atStartOfDay();
         LocalDateTime endOfDay = reportDate.atTime(LocalTime.MAX);
         
@@ -521,9 +510,10 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         Long totalReceipts = orderEntityRepository.countOrdersBetween(reportStartTime, endOfDay);
         Double totalSales = orderEntityRepository.sumSalesBetween(reportStartTime, endOfDay);
         
-        // Изчисляване на ДДС (20% от продажбите)
-        Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
-        Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
+        // ДДС от записаните поръчки (по реални ставки 20/9/0)
+        Double totalVAT = orderEntityRepository.sumTaxBetween(reportStartTime, endOfDay);
+        if (totalVAT == null) totalVAT = 0.0;
+        Double totalNetSales = (totalSales != null ? totalSales : 0.0) - totalVAT;
         
         // Получаване на данни по касиери за периода
         List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(reportStartTime, endOfDay);
@@ -593,9 +583,10 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         Long totalReceipts = orderEntityRepository.countOrdersBetween(startOfMonthDateTime, endOfMonthDateTime);
         Double totalSales = orderEntityRepository.sumSalesBetween(startOfMonthDateTime, endOfMonthDateTime);
         
-        // Изчисляване на ДДС (20% от продажбите)
-        Double totalVAT = totalSales != null ? totalSales * 0.20 : 0.0;
-        Double totalNetSales = totalSales != null ? totalSales - totalVAT : 0.0;
+        // ДДС от записаните поръчки (по реални ставки 20/9/0)
+        Double totalVAT = orderEntityRepository.sumTaxBetween(startOfMonthDateTime, endOfMonthDateTime);
+        if (totalVAT == null) totalVAT = 0.0;
+        Double totalNetSales = (totalSales != null ? totalSales : 0.0) - totalVAT;
         
         // Получаване на данни по касиери за целия месец
         List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(startOfMonthDateTime, endOfMonthDateTime);
@@ -690,6 +681,71 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .map(FiscalReportResponse::fromEntity)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    public org.springframework.data.domain.Page<FiscalReportResponse> getReportsPage(
+            org.springframework.data.domain.Pageable pageable,
+            String reportType,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+
+        boolean hasType = reportType != null && !reportType.isBlank();
+        FiscalReportEntity.ReportType typeEnum = null;
+        if (hasType) {
+            try {
+                typeEnum = FiscalReportEntity.ReportType.valueOf(reportType.trim().toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid report type: " + reportType);
+            }
+        }
+
+        LocalDate from = dateFrom != null ? dateFrom : LocalDate.of(1970, 1, 1);
+        LocalDate to = dateTo != null ? dateTo : LocalDate.of(2999, 12, 31);
+        boolean hasCashierFilter = false;
+        String key1 = "";
+        String key2 = "";
+
+        if (!isAdmin) {
+            // Cashiers: own reports from the last 14 days (covers overnight shifts / late Z reports)
+            from = LocalDate.now().minusDays(14);
+            to = LocalDate.now();
+            hasCashierFilter = true;
+            String email = authentication != null ? authentication.getName() : "";
+            key1 = email != null ? email.trim().toLowerCase() : "";
+            key2 = key1;
+            try {
+                var user = userRepository.findByEmail(email).orElse(null);
+                if (user != null && user.getName() != null && !user.getName().isBlank()) {
+                    key2 = user.getName().trim().toLowerCase();
+                }
+            } catch (Exception ignored) {
+            }
+            if (key1.isBlank() && key2.isBlank()) {
+                return org.springframework.data.domain.Page.empty(pageable);
+            }
+        }
+
+        // Default sort if client did not pass one
+        org.springframework.data.domain.Pageable effective = pageable;
+        if (pageable.getSort().isUnsorted()) {
+            effective = org.springframework.data.domain.PageRequest.of(
+                    pageable.getPageNumber(),
+                    pageable.getPageSize(),
+                    org.springframework.data.domain.Sort.by(
+                            org.springframework.data.domain.Sort.Order.desc("generatedAt"),
+                            org.springframework.data.domain.Sort.Order.desc("id")
+                    )
+            );
+        }
+
+        return fiscalReportRepository.searchReports(
+                        hasType, typeEnum, from, to, hasCashierFilter, key1, key2, effective)
+                .map(FiscalReportResponse::fromEntity);
+    }
     
     @Override
     public FiscalReportResponse getReportById(Long reportId) {
@@ -761,31 +817,6 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         
         log.info("Report sent to NAF: {}", report.getReportNumber());
         return true;
-    }
-    
-    @Override
-    public Double getTotalSalesForDate(LocalDate date) {
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        
-        return fiscalReceiptRepository.sumGrandTotalByDateRange(startOfDay, endOfDay);
-    }
-    
-    @Override
-    public Double getTotalVATForDate(LocalDate date) {
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        
-        return fiscalReceiptRepository.sumVatAmountByDateRange(startOfDay, endOfDay);
-    }
-    
-    @Override
-    public Integer getTotalReceiptsForDate(LocalDate date) {
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        
-        Long count = fiscalReceiptRepository.countByDateRange(startOfDay, endOfDay);
-        return count != null ? count.intValue() : 0;
     }
     
     // Помощен метод за генериране на номер на отчет

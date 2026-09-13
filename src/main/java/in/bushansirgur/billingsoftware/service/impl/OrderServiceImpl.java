@@ -22,7 +22,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -83,114 +87,187 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderResponse refundOrder(in.bushansirgur.billingsoftware.io.OrderRefundRequest request) {
         OrderEntity original = orderEntityRepository.findByOrderId(request.getOrderId())
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
 
-        // Restock items (partial or full)
+        if (original.getOriginalOrderId() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot refund a refund/void record");
+        }
+        if (original.getStatus() == OrderStatus.VOIDED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot refund a voided order");
+        }
+        if (original.getStatus() == OrderStatus.REFUNDED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order already fully refunded");
+        }
+
+        Map<String, Integer> alreadyReturned = getAlreadyReturnedQuantities(original.getOrderId());
+        Map<String, OrderItemEntity> originalByItemId = original.getItems().stream()
+                .collect(Collectors.toMap(OrderItemEntity::getItemId, oi -> oi, (a, b) -> a));
+
+        List<OrderItemEntity> refundItems = new ArrayList<>();
+        double refundSubtotal = 0.0;
+
         if (request.getItems() != null && !request.getItems().isEmpty()) {
-            for (in.bushansirgur.billingsoftware.io.OrderRefundRequest.RefundItem ri : request.getItems()) {
-                try {
-                    inventoryService.processPurchaseTransaction(ri.getItemId(), ri.getQuantity(), "REF-" + original.getOrderId());
-                } catch (Exception ex) {
-                    System.err.println("Restock failed for item " + ri.getItemId() + ": " + ex.getMessage());
+            for (OrderRefundRequest.RefundItem ri : request.getItems()) {
+                if (ri.getItemId() == null || ri.getQuantity() == null || ri.getQuantity() <= 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid refund item quantity");
                 }
+                OrderItemEntity oi = originalByItemId.get(ri.getItemId());
+                if (oi == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Item not in order: " + ri.getItemId());
+                }
+                int returned = alreadyReturned.getOrDefault(ri.getItemId(), 0);
+                int available = Math.max(0, oi.getQuantity() - returned);
+                if (ri.getQuantity() > available) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Cannot return more than available for " + oi.getName()
+                                    + " (available: " + available + ")");
+                }
+                refundItems.add(OrderItemEntity.builder()
+                        .itemId(oi.getItemId())
+                        .name(oi.getName())
+                        .barcode(oi.getBarcode())
+                        .price(oi.getPrice())
+                        .quantity(-Math.abs(ri.getQuantity()))
+                        .vatRate(oi.getVatRate())
+                        .build());
+                refundSubtotal += (oi.getPrice() != null ? oi.getPrice() : 0.0) * ri.getQuantity();
             }
         } else {
-            // Full refund: restock all
-            original.getItems().forEach(oi -> {
-                try {
-                    inventoryService.processPurchaseTransaction(oi.getItemId(), oi.getQuantity(), "REF-" + original.getOrderId());
-                } catch (Exception ex) {
-                    System.err.println("Restock failed for item " + oi.getItemId() + ": " + ex.getMessage());
-                }
-            });
+            for (OrderItemEntity oi : original.getItems()) {
+                int returned = alreadyReturned.getOrDefault(oi.getItemId(), 0);
+                int available = Math.max(0, oi.getQuantity() - returned);
+                if (available <= 0) continue;
+                refundItems.add(OrderItemEntity.builder()
+                        .itemId(oi.getItemId())
+                        .name(oi.getName())
+                        .barcode(oi.getBarcode())
+                        .price(oi.getPrice())
+                        .quantity(-available)
+                        .vatRate(oi.getVatRate())
+                        .build());
+                refundSubtotal += (oi.getPrice() != null ? oi.getPrice() : 0.0) * available;
+            }
+        }
+
+        if (refundItems.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nothing left to return on this order");
+        }
+
+        // Item prices are VAT-inclusive (same as sale grandTotal). Tax on the refund
+        // record is the proportional VAT share for fiscal reporting only — not added again.
+        double refundTax = 0.0;
+        if (original.getSubtotal() != null && original.getSubtotal() > 0 && original.getTax() != null) {
+            refundTax = original.getTax() * (refundSubtotal / original.getSubtotal());
+        }
+        double refundAmount = request.getRefundAmount() != null ? request.getRefundAmount() : refundSubtotal;
+        if (refundAmount <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Refund amount must be greater than 0");
+        }
+
+        // Restock returned items (skip quietly if catalog item was deleted)
+        List<String> skippedRestock = new ArrayList<>();
+        for (OrderItemEntity ri : refundItems) {
+            boolean restocked = inventoryService.processReturnTransaction(
+                    ri.getItemId(),
+                    ri.getBarcode(),
+                    Math.abs(ri.getQuantity()),
+                    "REF-" + original.getOrderId());
+            if (!restocked) {
+                skippedRestock.add(ri.getName() != null ? ri.getName() : ri.getItemId());
+            }
+        }
+        if (!skippedRestock.isEmpty()) {
+            System.out.println("Refund completed without restock for deleted items: " + skippedRestock);
         }
 
         // POS refund for card payments (mock/provider controlled in service)
         if ("CARD".equalsIgnoreCase(request.getRefundMethod())) {
             try {
-                String originalTxnId = original.getPaymentDetails() != null ? original.getPaymentDetails().getPosTransactionId() : null;
-                Double amount = request.getRefundAmount() != null ? request.getRefundAmount() : original.getGrandTotal();
-                if (originalTxnId != null && amount != null && amount > 0) {
+                String originalTxnId = original.getPaymentDetails() != null
+                        ? original.getPaymentDetails().getPosTransactionId() : null;
+                if (originalTxnId != null && refundAmount > 0) {
                     PosPaymentIO.RefundResponse rr = posPaymentService.refund(PosPaymentIO.RefundRequest.builder()
                             .originalTransactionId(originalTxnId)
-                            .amount(java.math.BigDecimal.valueOf(amount))
+                            .amount(java.math.BigDecimal.valueOf(refundAmount))
                             .currency("EUR")
                             .reason(request.getReason())
                             .build());
                     if (!"APPROVED".equalsIgnoreCase(rr.getStatus())) {
                         throw new RuntimeException("Card refund declined by provider");
                     }
-                    // store refund txn id on original order
                     if (original.getPaymentDetails() != null) {
                         original.getPaymentDetails().setPosRefundTransactionId(rr.getRefundTransactionId());
-                        orderEntityRepository.save(original);
                     }
                 }
+            } catch (ResponseStatusException ex) {
+                throw ex;
             } catch (Exception ex) {
-                throw new RuntimeException("POS refund failed: " + ex.getMessage(), ex);
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "POS refund failed: " + ex.getMessage());
             }
         }
 
-        // Mark original as refunded to reflect in UI
-        original.setStatus(in.bushansirgur.billingsoftware.io.OrderStatus.REFUNDED);
+        // Update returned map and decide status
+        for (OrderItemEntity ri : refundItems) {
+            alreadyReturned.merge(ri.getItemId(), Math.abs(ri.getQuantity()), Integer::sum);
+        }
+        boolean fullyRefunded = original.getItems().stream().allMatch(oi ->
+                alreadyReturned.getOrDefault(oi.getItemId(), 0) >= oi.getQuantity());
+        original.setStatus(fullyRefunded ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED);
         orderEntityRepository.save(original);
 
-        // Create refund items list (mirror quantities negative for readability)
-        java.util.List<OrderItemEntity> refundItems;
-        if (request.getItems() != null && !request.getItems().isEmpty()) {
-            java.util.Map<String, Integer> itemIdToQty = request.getItems().stream()
-                    .collect(java.util.stream.Collectors.toMap(in.bushansirgur.billingsoftware.io.OrderRefundRequest.RefundItem::getItemId, in.bushansirgur.billingsoftware.io.OrderRefundRequest.RefundItem::getQuantity));
-            refundItems = original.getItems().stream()
-                    .filter(oi -> itemIdToQty.containsKey(oi.getItemId()))
-                    .map(oi -> OrderItemEntity.builder()
-                            .itemId(oi.getItemId())
-                            .name(oi.getName())
-                            .barcode(oi.getBarcode())
-                            .price(oi.getPrice())
-                            .quantity(-Math.abs(itemIdToQty.get(oi.getItemId())))
-                            .build())
-                    .collect(java.util.stream.Collectors.toList());
-        } else {
-            refundItems = original.getItems().stream()
-                    .map(oi -> OrderItemEntity.builder()
-                            .itemId(oi.getItemId())
-                            .name(oi.getName())
-                            .barcode(oi.getBarcode())
-                            .price(oi.getPrice())
-                            .quantity(-Math.abs(oi.getQuantity()))
-                            .build())
-                    .collect(java.util.stream.Collectors.toList());
-        }
+        String cashier = SecurityContextHolder.getContext().getAuthentication() != null
+                ? SecurityContextHolder.getContext().getAuthentication().getName()
+                : original.getCashierUsername();
 
-        // Create a refund order record (mirror) for audit
         OrderEntity refund = OrderEntity.builder()
                 .customerName(original.getCustomerName())
                 .phoneNumber(original.getPhoneNumber())
-                .subtotal(-Math.abs(original.getSubtotal()))
-                .tax(-Math.abs(original.getTax()))
-                .grandTotal(-Math.abs(request.getRefundAmount() != null ? request.getRefundAmount() : original.getGrandTotal()))
+                .subtotal(-Math.abs(refundSubtotal))
+                .tax(-Math.abs(refundTax))
+                .grandTotal(-Math.abs(refundAmount))
                 .paymentMethod(original.getPaymentMethod())
-                .status(in.bushansirgur.billingsoftware.io.OrderStatus.REFUNDED)
+                .status(OrderStatus.REFUNDED)
                 .originalOrderId(original.getOrderId())
-                .cashierUsername(org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() != null ? org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName() : original.getCashierUsername())
+                .cashierUsername(cashier)
                 .build();
-
         refund.setItems(refundItems);
         refund = orderEntityRepository.save(refund);
         return convertToResponse(refund);
     }
 
+    private Map<String, Integer> getAlreadyReturnedQuantities(String orderId) {
+        Map<String, Integer> map = new HashMap<>();
+        for (OrderEntity refund : orderEntityRepository.findByOriginalOrderId(orderId)) {
+            if (refund.getItems() == null) continue;
+            for (OrderItemEntity item : refund.getItems()) {
+                if (item.getItemId() == null || item.getQuantity() == null) continue;
+                map.merge(item.getItemId(), Math.abs(item.getQuantity()), Integer::sum);
+            }
+        }
+        return map;
+    }
+
     private OrderItemEntity convertToOrderItemEntity(OrderRequest.OrderItemRequest orderItemRequest) {
+        Double vatRate = orderItemRequest.getVatRate();
+        if (vatRate == null) {
+            vatRate = 0.20;
+        }
         return OrderItemEntity.builder()
                 .itemId(orderItemRequest.getItemId())
                 .name(orderItemRequest.getName())
                 .barcode(orderItemRequest.getBarcode())
                 .price(orderItemRequest.getPrice())
                 .quantity(orderItemRequest.getQuantity())
+                .vatRate(vatRate)
                 .build();
     }
 
     private OrderResponse convertToResponse(OrderEntity newOrder) {
+        boolean isOriginalSale = newOrder.getOriginalOrderId() == null;
+        Map<String, Integer> returned = isOriginalSale
+                ? getAlreadyReturnedQuantities(newOrder.getOrderId())
+                : Map.of();
+
         return OrderResponse.builder()
                 .orderId(newOrder.getOrderId())
                 .customerName(newOrder.getCustomerName())
@@ -203,7 +280,7 @@ public class OrderServiceImpl implements OrderService {
                 .orderStatus(newOrder.getStatus())
                 .originalOrderId(newOrder.getOriginalOrderId())
                 .items(newOrder.getItems().stream()
-                        .map(this::convertToItemResponse)
+                        .map(oi -> convertToItemResponse(oi, returned, isOriginalSale))
                         .collect(Collectors.toList()))
                 .paymentDetails(newOrder.getPaymentDetails())
                 .createdAt(newOrder.getCreatedAt())
@@ -211,15 +288,26 @@ public class OrderServiceImpl implements OrderService {
                 
     }
 
-    private OrderResponse.OrderItemResponse convertToItemResponse(OrderItemEntity orderItemEntity) {
+    private OrderResponse.OrderItemResponse convertToItemResponse(OrderItemEntity orderItemEntity,
+                                                                  Map<String, Integer> alreadyReturned,
+                                                                  boolean isOriginalSale) {
+        int qty = orderItemEntity.getQuantity() != null ? orderItemEntity.getQuantity() : 0;
+        Integer refunded = null;
+        Integer returnable = null;
+        if (isOriginalSale) {
+            refunded = alreadyReturned.getOrDefault(orderItemEntity.getItemId(), 0);
+            returnable = Math.max(0, qty - refunded);
+        }
         return OrderResponse.OrderItemResponse.builder()
                 .itemId(orderItemEntity.getItemId())
                 .name(orderItemEntity.getName())
                 .barcode(orderItemEntity.getBarcode())
                 .price(orderItemEntity.getPrice())
                 .quantity(orderItemEntity.getQuantity())
+                .vatRate(orderItemEntity.getVatRate())
+                .refundedQuantity(refunded)
+                .returnableQuantity(returnable)
                 .build();
-
     }
 
     private OrderEntity convertToOrderEntity(OrderRequest request) {
@@ -234,10 +322,39 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional
     public void deleteOrder(String orderId) {
         OrderEntity existingOrder = orderEntityRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found"));
+
+        // Restock sale lines when aborting an uncompleted sale (e.g. fiscal/payment failure)
+        if (existingOrder.getOriginalOrderId() == null
+                && existingOrder.getItems() != null
+                && existingOrder.getStatus() != OrderStatus.REFUNDED
+                && existingOrder.getStatus() != OrderStatus.PARTIALLY_REFUNDED
+                && existingOrder.getStatus() != OrderStatus.VOIDED) {
+            for (OrderItemEntity item : existingOrder.getItems()) {
+                if (item.getItemId() == null || item.getQuantity() == null || item.getQuantity() <= 0) continue;
+                try {
+                    inventoryService.processReturnTransaction(
+                            item.getItemId(),
+                            item.getBarcode(),
+                            item.getQuantity(),
+                            "ABORT-" + orderId);
+                } catch (Exception ex) {
+                    System.out.println("Abort restock skipped for " + item.getItemId() + ": " + ex.getMessage());
+                }
+            }
+        }
+
         orderEntityRepository.delete(existingOrder);
+    }
+
+    @Override
+    public OrderResponse getOrderById(String orderId) {
+        OrderEntity existingOrder = orderEntityRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderId));
+        return convertToResponse(existingOrder);
     }
 
     @Override
@@ -246,28 +363,6 @@ public class OrderServiceImpl implements OrderService {
                 .stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
-    }
-
-    @Override
-    public OrderResponse verifyPayment(PaymentVerificationRequest request) {
-        OrderEntity existingOrder = orderEntityRepository.findByOrderId(request.getOrderId())
-                .orElseThrow(() -> new RuntimeException("Order not found"));
-
-        if (!verifyRazorpaySignature(request.getRazorpayOrderId(),
-                request.getRazorpayPaymentId(),
-                request.getRazorpaySignature())) {
-            throw new RuntimeException("Payment verification failed");
-        }
-
-        PaymentDetails paymentDetails = existingOrder.getPaymentDetails();
-        paymentDetails.setRazorpayOrderId(request.getRazorpayOrderId());
-        paymentDetails.setRazorpayPaymentId(request.getRazorpayPaymentId());
-        paymentDetails.setRazorpaySignature(request.getRazorpaySignature());
-        paymentDetails.setStatus(PaymentDetails.PaymentStatus.COMPLETED);
-
-        existingOrder = orderEntityRepository.save(existingOrder);
-        return convertToResponse(existingOrder);
-
     }
 
     @Override
@@ -299,21 +394,23 @@ public class OrderServiceImpl implements OrderService {
 
     public Page<OrderResponse> getOrders(Pageable pageable, String q, LocalDate fromDate, LocalDate toDate) {
         boolean noFilters = (q == null || q.isBlank()) && fromDate == null && toDate == null;
-        Page<OrderEntity> page = noFilters
-                ? orderEntityRepository.findAll(pageable)
-                : orderEntityRepository.searchOrders(
-                        (q == null || q.isBlank()) ? null : q,
-                        fromDate == null ? null : fromDate.atStartOfDay(),
-                        toDate == null ? null : toDate.atTime(23,59,59),
-                        pageable
-                );
+        Page<OrderEntity> page;
+        if (noFilters) {
+            page = orderEntityRepository.findAll(pageable);
+        } else {
+            // Avoid Postgres "could not determine data type of parameter" for NULL timestamps
+            LocalDateTime from = fromDate == null
+                    ? LocalDateTime.of(1970, 1, 1, 0, 0)
+                    : fromDate.atStartOfDay();
+            LocalDateTime to = toDate == null
+                    ? LocalDateTime.of(2999, 12, 31, 23, 59, 59)
+                    : toDate.atTime(23, 59, 59);
+            String query = (q == null || q.isBlank()) ? "" : q.trim();
+            page = orderEntityRepository.searchOrders(query, from, to, pageable);
+        }
         List<OrderResponse> content = page.getContent().stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
         return new PageImpl<>(content, pageable, page.getTotalElements());
-    }
-
-    private boolean verifyRazorpaySignature(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
-        return true;
     }
 }

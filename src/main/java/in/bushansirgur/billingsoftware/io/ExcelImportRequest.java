@@ -20,4 +20,5 @@ public class ExcelImportRequest {
     private BigDecimal vatRate;
     private BigDecimal price;
     private Integer stockQuantity;
+    private BigDecimal costPrice;
 }

@@ -1,25 +1,17 @@
 package in.bushansirgur.billingsoftware.service;
 
+import in.bushansirgur.billingsoftware.io.ArchiveDestination;
+
 import java.time.LocalDate;
 
 public interface OrderArchiverService {
 
-    /**
-     * Archive orders older than retentionMonths to S3 and purge after success.
-     * Returns number of archived orders.
-     */
+    /** Archive orders older than retention using schedule destination (default local). */
     int archiveOldOrders();
 
-    /**
-     * Archive orders older than the specified cutoff date to S3 and purge after success.
-     * Returns number of archived orders.
-     */
-    int archiveOrdersBefore(LocalDate cutoffDate);
+    int archiveOldOrders(ArchiveDestination destination);
 
-    /**
-     * Export orders in given [inclusive) month (YYYY, MM) to S3 without purge.
-     */
-    int exportMonth(int year, int month);
+    int archiveOrdersBefore(LocalDate cutoffDate, ArchiveDestination destination);
+
+    int exportMonth(int year, int month, ArchiveDestination destination);
 }
-
-

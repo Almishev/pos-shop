@@ -17,6 +17,8 @@ public interface InventoryAdjustmentRepository extends JpaRepository<InventoryAd
     
     List<InventoryAdjustmentEntity> findByItemIdOrderByCreatedAtDesc(String itemId);
     
+    void deleteByItemId(String itemId);
+    
     List<InventoryAdjustmentEntity> findByAdjustmentType(InventoryAdjustmentEntity.AdjustmentType adjustmentType);
     
     List<InventoryAdjustmentEntity> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate);

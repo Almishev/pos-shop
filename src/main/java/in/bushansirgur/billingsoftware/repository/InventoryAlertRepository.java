@@ -23,6 +23,8 @@ public interface InventoryAlertRepository extends JpaRepository<InventoryAlertEn
     
     List<InventoryAlertEntity> findByIsResolvedFalse();
     
+    void deleteByItemId(String itemId);
+    
     List<InventoryAlertEntity> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate);
     
     @Query("SELECT a FROM InventoryAlertEntity a WHERE a.itemId = :itemId AND a.isResolved = false")

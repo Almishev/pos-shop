@@ -6,7 +6,6 @@ import in.bushansirgur.billingsoftware.io.OrderRefundRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import java.time.LocalDate;
-import in.bushansirgur.billingsoftware.io.PaymentVerificationRequest;
 
 import java.util.List;
 
@@ -16,9 +15,9 @@ public interface OrderService {
 
     void deleteOrder(String orderId);
 
-    List<OrderResponse> getLatestOrders();
+    OrderResponse getOrderById(String orderId);
 
-    OrderResponse verifyPayment(PaymentVerificationRequest request);
+    List<OrderResponse> getLatestOrders();
 
     Double sumSalesByDate(LocalDate date);
 

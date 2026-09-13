@@ -51,4 +51,7 @@ public interface CashDrawerSessionRepository extends JpaRepository<CashDrawerSes
     // Всички активни сесии за даден касиер (без значение датата)
     @Query("SELECT c FROM CashDrawerSessionEntity c WHERE c.cashierUsername = :cashierUsername AND c.status = 'ACTIVE'")
     List<CashDrawerSessionEntity> findActiveSessionsByCashier(@Param("cashierUsername") String cashierUsername);
+
+    /** All open till sessions (any date) — used to block store daily until shifts are closed. */
+    List<CashDrawerSessionEntity> findByStatus(CashDrawerSessionEntity.SessionStatus status);
 }

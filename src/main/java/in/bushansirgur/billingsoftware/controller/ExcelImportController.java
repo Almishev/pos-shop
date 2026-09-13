@@ -37,6 +37,38 @@ public class ExcelImportController {
         }
     }
 
+    @PostMapping("/import/deliveries")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ExcelImportResponse> importDeliveries(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "supplierName", required = false) String supplierName,
+            @RequestParam(value = "referenceNumber", required = false) String referenceNumber,
+            @RequestParam(value = "deliveryDate", required = false) String deliveryDate,
+            @RequestParam(value = "notes", required = false) String notes,
+            @RequestParam(value = "postImmediately", defaultValue = "false") boolean postImmediately,
+            @RequestParam(value = "createdBy", required = false) String createdBy
+    ) {
+        try {
+            if (!isValidFile(file)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only Excel (.xlsx) or CSV files are allowed");
+            }
+            String user = createdBy;
+            if (user == null || user.isBlank()) {
+                var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                user = auth != null ? auth.getName() : "ADMIN";
+            }
+            ExcelImportResponse response = excelImportService.importDeliveriesFromExcel(
+                    file, supplierName, referenceNumber, deliveryDate, notes, postImmediately, user);
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Error processing file: " + e.getMessage());
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error importing deliveries: " + e.getMessage());
+        }
+    }
+
     private boolean isValidFile(MultipartFile file) {
         String contentType = file.getContentType();
         String filename = file.getOriginalFilename();

@@ -18,4 +18,6 @@ public class ExcelImportResponse {
     private List<String> errors;
     private List<String> warnings;
     private String message;
+    /** Set when a delivery draft/document was created from the import. */
+    private String deliveryId;
 }

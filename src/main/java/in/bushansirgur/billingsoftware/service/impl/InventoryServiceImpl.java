@@ -18,6 +18,8 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -65,8 +67,15 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional
     public InventoryResponse addStock(InventoryRequest request) {
+        if (request.getQuantity() == null || request.getQuantity() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than 0");
+        }
+        if (request.getUnitPrice() == null || request.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Delivery unit price must be greater than 0");
+        }
+
         ItemEntity item = getItemById(request.getItemId());
-        Integer previousQuantity = item.getStockQuantity();
+        Integer previousQuantity = item.getStockQuantity() != null ? item.getStockQuantity() : 0;
         Integer newQuantity = previousQuantity + request.getQuantity();
         
         // Create transaction record
@@ -83,8 +92,9 @@ public class InventoryServiceImpl implements InventoryService {
             request.getReferenceType()
         );
         
-        // Update item stock
+        // Update item stock + last known delivery cost
         item.setStockQuantity(newQuantity);
+        item.setCostPrice(request.getUnitPrice());
         item.setLastRestockDate(Timestamp.valueOf(LocalDateTime.now()));
         itemRepository.save(item);
         
@@ -232,6 +242,7 @@ public class InventoryServiceImpl implements InventoryService {
     public List<InventoryResponse> getItemTransactionHistory(String itemId) {
         return transactionRepository.findByItemIdOrderByCreatedAtDesc(itemId).stream()
             .map(this::buildInventoryResponseFromTransaction)
+            .filter(Objects::nonNull)
             .collect(Collectors.toList());
     }
     
@@ -239,6 +250,7 @@ public class InventoryServiceImpl implements InventoryService {
     public List<InventoryResponse> getRecentTransactions() {
         return transactionRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(0, 10)).stream()
             .map(this::buildInventoryResponseFromTransaction)
+            .filter(Objects::nonNull)
             .collect(Collectors.toList());
     }
     
@@ -266,10 +278,35 @@ public class InventoryServiceImpl implements InventoryService {
     }
     
     @Override
+    @Transactional
     public List<InventoryResponse> getActiveAlerts() {
-        return alertRepository.findByIsResolvedFalse().stream()
-            .map(this::buildInventoryResponseFromAlert)
-            .collect(Collectors.toList());
+        List<InventoryResponse> results = new java.util.ArrayList<>();
+        for (InventoryAlertEntity alert : alertRepository.findByIsResolvedFalse()) {
+            try {
+                InventoryResponse response = buildInventoryResponseFromAlert(alert);
+                if (response != null) {
+                    results.add(response);
+                } else {
+                    // Orphan alert for deleted item — resolve so it stops breaking the warehouse page
+                    alert.setIsResolved(true);
+                    alert.setResolvedAt(LocalDateTime.now());
+                    alert.setResolvedBy("SYSTEM");
+                    alertRepository.save(alert);
+                }
+            } catch (Exception ex) {
+                log.warn("Skipping broken inventory alert {} for item {}: {}",
+                        alert.getId(), alert.getItemId(), ex.getMessage());
+                try {
+                    alert.setIsResolved(true);
+                    alert.setResolvedAt(LocalDateTime.now());
+                    alert.setResolvedBy("SYSTEM");
+                    alertRepository.save(alert);
+                } catch (Exception saveEx) {
+                    log.warn("Could not auto-resolve orphan alert {}: {}", alert.getId(), saveEx.getMessage());
+                }
+            }
+        }
+        return results;
     }
     
     @Override
@@ -300,6 +337,47 @@ public class InventoryServiceImpl implements InventoryService {
             .build();
         
         addStock(request);
+    }
+
+    @Override
+    @Transactional
+    public boolean processReturnTransaction(String itemId, String barcode, Integer quantity, String refundReference) {
+        if (quantity == null || quantity <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than 0");
+        }
+        Optional<ItemEntity> itemOpt = Optional.empty();
+        if (itemId != null && !itemId.isBlank()) {
+            itemOpt = itemRepository.findByItemId(itemId);
+        }
+        if (itemOpt.isEmpty() && barcode != null && !barcode.isBlank()) {
+            itemOpt = itemRepository.findByBarcode(barcode);
+        }
+        if (itemOpt.isEmpty()) {
+            log.warn("Skip return restock — item not in catalog (id={}, barcode={}, ref={})",
+                    itemId, barcode, refundReference);
+            return false;
+        }
+        ItemEntity item = itemOpt.get();
+        Integer previousQuantity = item.getStockQuantity() != null ? item.getStockQuantity() : 0;
+        Integer newQuantity = previousQuantity + quantity;
+
+        createTransaction(
+            item.getItemId(),
+            InventoryTransactionEntity.TransactionType.RETURN,
+            quantity,
+            previousQuantity,
+            newQuantity,
+            item.getCostPrice(),
+            "Return / refund restock",
+            "SYSTEM",
+            refundReference,
+            "RETURN"
+        );
+
+        item.setStockQuantity(newQuantity);
+        itemRepository.save(item);
+        checkAndCreateAlerts(item.getItemId());
+        return true;
     }
     
     // Helper methods
@@ -403,13 +481,25 @@ public class InventoryServiceImpl implements InventoryService {
     }
     
     private InventoryResponse buildInventoryResponseFromTransaction(InventoryTransactionEntity transaction) {
-        ItemEntity item = getItemById(transaction.getItemId());
-        return buildInventoryResponse(item, transaction, 
+        Optional<ItemEntity> itemOpt = itemRepository.findByItemId(transaction.getItemId());
+        if (itemOpt.isEmpty()) {
+            log.warn("Skipping inventory transaction {} — item not found: {}",
+                    transaction.getTransactionId(), transaction.getItemId());
+            return null;
+        }
+        ItemEntity item = itemOpt.get();
+        return buildInventoryResponse(item, transaction,
             transaction.getPreviousQuantity(), transaction.getNewQuantity());
     }
     
     private InventoryResponse buildInventoryResponseFromAlert(InventoryAlertEntity alert) {
-        ItemEntity item = getItemById(alert.getItemId());
+        Optional<ItemEntity> itemOpt = itemRepository.findByItemId(alert.getItemId());
+        if (itemOpt.isEmpty()) {
+            log.warn("Skipping inventory alert {} — item not found: {}",
+                    alert.getId(), alert.getItemId());
+            return null;
+        }
+        ItemEntity item = itemOpt.get();
         return buildInventoryResponse(item, null, item.getStockQuantity(), item.getStockQuantity());
     }
     

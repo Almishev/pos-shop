@@ -8,8 +8,6 @@ import java.util.List;
 
 public interface FiscalReportService {
     
-    FiscalReportResponse generateDailyReport(FiscalReportRequest request);
-    
     FiscalReportResponse generateShiftReport(FiscalReportRequest request);
     
     FiscalReportResponse generateStoreDailyReport(FiscalReportRequest request);
@@ -19,6 +17,13 @@ public interface FiscalReportService {
     FiscalReportResponse generateYearlyReport(FiscalReportRequest request);
     
     List<FiscalReportResponse> getAllReports();
+
+    org.springframework.data.domain.Page<FiscalReportResponse> getReportsPage(
+            org.springframework.data.domain.Pageable pageable,
+            String reportType,
+            java.time.LocalDate dateFrom,
+            java.time.LocalDate dateTo
+    );
     
     FiscalReportResponse getReportById(Long reportId);
     
@@ -33,12 +38,6 @@ public interface FiscalReportService {
     boolean sendReportToNAF(Long reportId);
     
     boolean sendReportToNAF(String reportNumber);
-    
-    Double getTotalSalesForDate(LocalDate date);
-    
-    Double getTotalVATForDate(LocalDate date);
-    
-    Integer getTotalReceiptsForDate(LocalDate date);
     
     // Reset data after reports
     void resetDataAfterShiftReport(String cashierUsername, LocalDate date);

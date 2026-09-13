@@ -35,6 +35,8 @@ public interface InventoryTransactionRepository extends JpaRepository<InventoryT
     
     Page<InventoryTransactionEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
     
+    void deleteByItemId(String itemId);
+    
     @Query("SELECT SUM(t.quantity) FROM InventoryTransactionEntity t WHERE t.itemId = :itemId AND t.transactionType = :transactionType")
     Integer sumQuantityByItemIdAndType(@Param("itemId") String itemId, 
                                       @Param("transactionType") InventoryTransactionEntity.TransactionType transactionType);

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import in.bushansirgur.billingsoftware.io.ItemRequest;
 import in.bushansirgur.billingsoftware.io.ItemResponse;
-import in.bushansirgur.billingsoftware.entity.ItemEntity;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -53,36 +52,6 @@ public class ItemController {
     @GetMapping("/items/search")
     public List<ItemResponse> searchItems(@RequestParam String q) {
         return itemService.searchItems(q);
-    }
-
-    @PostMapping("/admin/items/generate-missing-ids")
-    public ResponseEntity<String> generateMissingItemIds() {
-        try {
-            itemService.generateMissingItemIds();
-            return ResponseEntity.ok("Missing item IDs generated successfully");
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error generating missing item IDs: " + e.getMessage());
-        }
-    }
-
-    @GetMapping("/items/debug/all")
-    public ResponseEntity<List<Map<String, Object>>> debugAllItems() {
-        try {
-            List<ItemEntity> items = itemService.getAllItemsForDebug();
-            List<Map<String, Object>> debugInfo = items.stream()
-                    .map(item -> {
-                        Map<String, Object> info = new java.util.HashMap<>();
-                        info.put("id", item.getId());
-                        info.put("itemId", item.getItemId());
-                        info.put("name", item.getName());
-                        info.put("hasItemId", item.getItemId() != null && !item.getItemId().trim().isEmpty());
-                        return info;
-                    })
-                    .collect(java.util.stream.Collectors.toList());
-            return ResponseEntity.ok(debugInfo);
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error getting debug info: " + e.getMessage());
-        }
     }
 
     @GetMapping("/items/generate-barcode")

@@ -5,12 +5,15 @@ import in.bushansirgur.billingsoftware.entity.ItemEntity;
 import in.bushansirgur.billingsoftware.io.ItemRequest;
 import in.bushansirgur.billingsoftware.io.ItemResponse;
 import in.bushansirgur.billingsoftware.repository.CategoryRepository;
+import in.bushansirgur.billingsoftware.repository.InventoryAdjustmentRepository;
+import in.bushansirgur.billingsoftware.repository.InventoryAlertRepository;
+import in.bushansirgur.billingsoftware.repository.InventoryTransactionRepository;
 import in.bushansirgur.billingsoftware.repository.ItemRepository;
-import in.bushansirgur.billingsoftware.service.FileUploadService;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,7 +29,9 @@ public class ItemServiceImpl implements ItemService {
 
     private final CategoryRepository categoryRepository;
     private final ItemRepository itemRepository;
-    private final FileUploadService fileUploadService;
+    private final InventoryTransactionRepository inventoryTransactionRepository;
+    private final InventoryAlertRepository inventoryAlertRepository;
+    private final InventoryAdjustmentRepository inventoryAdjustmentRepository;
 
     @Override
     public ItemResponse add(ItemRequest request, MultipartFile file) throws IOException {
@@ -38,18 +43,11 @@ public class ItemServiceImpl implements ItemService {
                     });
         }
         
-        String imgUrl = null;
-        if (file != null && !file.isEmpty()) {
-            imgUrl = fileUploadService.uploadFile(file);
-        } else {
-            // Set default supermarket image URL if no file is provided
-            imgUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
-        }
         ItemEntity newItem = convertToEntity(request);
         CategoryEntity existingCategory = categoryRepository.findByCategoryId(request.getCategoryId())
                 .orElseThrow(() -> new RuntimeException("Category not found: "+request.getCategoryId()));
         newItem.setCategory(existingCategory);
-        newItem.setImgUrl(imgUrl);
+        newItem.setImgUrl(null);
         newItem = itemRepository.save(newItem);
         return convertToResponse(newItem);
     }
@@ -132,7 +130,22 @@ public class ItemServiceImpl implements ItemService {
                 .price(request.getPrice())
                 .barcode(barcode)
                 .vatRate(request.getVatRate() == null ? new java.math.BigDecimal("0.20") : request.getVatRate())
+                .unitOfMeasure(normalizeUnitOfMeasure(request.getUnitOfMeasure()))
+                .costPrice(request.getCostPrice())
                 .build();
+    }
+
+    private String normalizeUnitOfMeasure(String unit) {
+        if (unit == null || unit.trim().isEmpty()) {
+            return "pcs";
+        }
+        String normalized = unit.trim().toLowerCase();
+        return switch (normalized) {
+            case "kg", "кг", "kilogram", "kilograms" -> "kg";
+            case "l", "lt", "л", "л.", "liter", "litre", "литър", "литри" -> "l";
+            case "pcs", "pc", "бр", "бр.", "брой", "бройка", "бройки", "piece", "pieces" -> "pcs";
+            default -> "pcs";
+        };
     }
 
     private int computeEan13Checksum(String base12Digits) {
@@ -194,6 +207,11 @@ public class ItemServiceImpl implements ItemService {
         existingItem.setPrice(request.getPrice());
         existingItem.setBarcode(request.getBarcode());
         existingItem.setVatRate(request.getVatRate());
+        if (request.getUnitOfMeasure() != null) {
+            existingItem.setUnitOfMeasure(normalizeUnitOfMeasure(request.getUnitOfMeasure()));
+        }
+        // Allow clearing or setting optional last known cost price
+        existingItem.setCostPrice(request.getCostPrice());
 
         // Update category if provided
         if (request.getCategoryId() != null && !request.getCategoryId().isEmpty()) {
@@ -202,20 +220,8 @@ public class ItemServiceImpl implements ItemService {
             existingItem.setCategory(category);
         }
 
-        // Handle image upload if provided
-        if (file != null && !file.isEmpty()) {
-            // Delete old image if exists and it's not the default image
-            if (existingItem.getImgUrl() != null && !existingItem.getImgUrl().trim().isEmpty()) {
-                String defaultImageUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
-                if (!existingItem.getImgUrl().equals(defaultImageUrl)) {
-                    fileUploadService.deleteFile(existingItem.getImgUrl());
-                }
-            }
-            // Upload new image
-            String imgUrl = fileUploadService.uploadFile(file);
-            existingItem.setImgUrl(imgUrl);
-        }
-        // Keep existing image if no new image is provided
+        // Images disabled — ignore any uploaded file
+        existingItem.setImgUrl(null);
 
         ItemEntity updatedItem = itemRepository.save(existingItem);
         return convertToResponse(updatedItem);
@@ -252,32 +258,16 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
+    @Transactional
     public void deleteItem(String itemId) {
         ItemEntity existingItem = itemRepository.findByItemId(itemId)
                 .orElseThrow(() -> new RuntimeException("Item not found: "+itemId));
-        // Only delete image if it's not the default image
-        String defaultImageUrl = "https://shop-software-pirinpixel.s3.eu-central-1.amazonaws.com/supermarket.png";
-        if (existingItem.getImgUrl() != null && !existingItem.getImgUrl().equals(defaultImageUrl)) {
-            fileUploadService.deleteFile(existingItem.getImgUrl());
-        }
+
+        // Remove warehouse records so deleted items don't remain in inventory views/alerts
+        inventoryTransactionRepository.deleteByItemId(itemId);
+        inventoryAlertRepository.deleteByItemId(itemId);
+        inventoryAdjustmentRepository.deleteByItemId(itemId);
+
         itemRepository.delete(existingItem);
-    }
-    
-    @Override
-    public void generateMissingItemIds() {
-        List<ItemEntity> itemsWithoutId = itemRepository.findAll()
-                .stream()
-                .filter(item -> item.getItemId() == null || item.getItemId().trim().isEmpty())
-                .collect(Collectors.toList());
-        
-        for (ItemEntity item : itemsWithoutId) {
-            item.setItemId(java.util.UUID.randomUUID().toString());
-            itemRepository.save(item);
-        }
-    }
-    
-    @Override
-    public List<ItemEntity> getAllItemsForDebug() {
-        return itemRepository.findAll();
     }
 }
