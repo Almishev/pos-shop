@@ -54,7 +54,7 @@ public class CategoryServiceImpl implements CategoryService {
     @Override
     public void delete(String categoryId) {
         CategoryEntity existingCategory = categoryRepository.findByCategoryId(categoryId)
-                .orElseThrow(() -> new RuntimeException("Category not found: "+categoryId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found: " + categoryId));
         Integer itemsCount = itemRepository.countByCategoryId(existingCategory.getId());
         if (itemsCount != null && itemsCount > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,

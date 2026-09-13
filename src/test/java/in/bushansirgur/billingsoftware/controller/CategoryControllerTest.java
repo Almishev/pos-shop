@@ -11,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import in.bushansirgur.billingsoftware.exception.GlobalExceptionHandler;
 
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(CategoryController.class)
 @AutoConfigureMockMvc(addFilters = false)
+@Import(GlobalExceptionHandler.class)
 @ActiveProfiles("test")
 class CategoryControllerTest {
 
@@ -222,7 +225,8 @@ class CategoryControllerTest {
     void shouldReturnNotFoundWhenDeletingNonExistentCategory() throws Exception {
         // Arrange
         String categoryId = "non-existent-category";
-        doThrow(new RuntimeException("Category not found: " + categoryId))
+        doThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "Category not found: " + categoryId))
                 .when(categoryService).delete(categoryId);
 
         // Act & Assert
@@ -236,7 +240,8 @@ class CategoryControllerTest {
     @Test
     @DisplayName("Should handle null categoryId in delete")
     void shouldHandleNullCategoryIdInDelete() throws Exception {
-        doThrow(new RuntimeException("Category not found: null"))
+        doThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND, "Category not found: null"))
                 .when(categoryService).delete("null");
 
         mockMvc.perform(delete("/admin/categories/{categoryId}", "null"))

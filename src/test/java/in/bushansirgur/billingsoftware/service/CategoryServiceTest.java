@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -159,17 +160,18 @@ class CategoryServiceTest {
     }
 
     @Test
-    @DisplayName("Should throw RuntimeException when category not found for deletion")
-    void delete_ShouldThrowRuntimeException_WhenCategoryNotFound() {
+    @DisplayName("Should throw ResponseStatusException when category not found for deletion")
+    void delete_ShouldThrowResponseStatusException_WhenCategoryNotFound() {
         String categoryId = "non-existent-category-id";
         when(categoryRepository.findByCategoryId(categoryId))
                 .thenReturn(Optional.empty());
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
             categoryService.delete(categoryId);
         });
 
-        assertEquals("Category not found: " + categoryId, exception.getMessage());
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals("Category not found: " + categoryId, exception.getReason());
         verify(categoryRepository, never()).delete(any(CategoryEntity.class));
     }
 }

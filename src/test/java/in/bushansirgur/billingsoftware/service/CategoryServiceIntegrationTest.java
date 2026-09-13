@@ -111,10 +111,12 @@ class CategoryServiceIntegrationTest {
     @Test
     @DisplayName("Should throw exception when deleting non-existent category")
     void shouldThrowExceptionWhenDeletingNonExistentCategory() {
-        RuntimeException exception = assertThrows(RuntimeException.class, () ->
-                categoryService.delete("non-existent-id"));
+        org.springframework.web.server.ResponseStatusException exception =
+                assertThrows(org.springframework.web.server.ResponseStatusException.class, () ->
+                        categoryService.delete("non-existent-id"));
 
-        assertEquals("Category not found: non-existent-id", exception.getMessage());
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatusCode());
+        assertEquals("Category not found: non-existent-id", exception.getReason());
     }
 
     @Test
