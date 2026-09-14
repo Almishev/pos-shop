@@ -102,6 +102,7 @@ public class LabelServiceImpl implements LabelService {
             item.put("name", entity.getName());
             item.put("price", entity.getPrice() != null ? entity.getPrice().doubleValue() : 0.0);
             item.put("barcode", entity.getBarcode());
+            item.put("unitOfMeasure", entity.getUnitOfMeasure() != null ? entity.getUnitOfMeasure() : "pcs");
             printedLabels.add(createPriceLabel(item));
         }
 
@@ -211,17 +212,40 @@ public class LabelServiceImpl implements LabelService {
         );
     }
     
+    private String formatUnitLabelBg(Object unitObj) {
+        String unit = unitObj != null ? unitObj.toString().trim().toLowerCase() : "pcs";
+        return switch (unit) {
+            case "kg", "кг" -> "кг";
+            case "l", "lt", "л" -> "л";
+            default -> "бр.";
+        };
+    }
+
     private String generatePriceLabelHTML(Map<String, Object> item) {
+        Object barcodeObj = item.get("barcode");
+        String barcode = barcodeObj != null ? barcodeObj.toString().trim() : "";
+        String unitLabel = formatUnitLabelBg(item.get("unitOfMeasure"));
+        // SVG placeholder: frontend printLabels fills stripes via JsBarcode (data-barcode)
+        String barcodeHtml = barcode.isEmpty()
+                ? "<div class=\"item-barcode-missing\">Няма баркод</div>"
+                : String.format(
+                        "<div class=\"item-barcode-wrap\"><svg class=\"jsbarcode item-barcode-svg\" data-barcode=\"%s\"></svg></div>",
+                        barcode.replace("\"", "&quot;")
+                );
         return String.format("""
-            <div class="price-label" style="width: 30mm; height: 20mm; border: 1px solid #000; padding: 2mm; font-family: Arial, sans-serif;">
-                <div style="font-size: 8pt; font-weight: bold; text-align: center; margin-bottom: 1mm;">%s</div>
-                <div style="font-size: 10pt; font-weight: bold; text-align: center; color: #d32f2f; margin-bottom: 1mm;">%.2f €</div>
-                <div style="font-size: 6pt; text-align: center;">%s</div>
+            <div class="price-label" style="width: 40mm; height: 30mm; border: 1px solid #000; padding: 1.5mm; font-family: Arial, sans-serif; box-sizing: border-box; display: inline-block; vertical-align: top; overflow: hidden;">
+                <div style="font-size: 7pt; font-weight: bold; text-align: center; margin-bottom: 0.4mm; line-height: 1.1; max-height: 5.5mm; overflow: hidden;">%s</div>
+                <div style="display: flex; align-items: baseline; justify-content: center; gap: 3px; margin-bottom: 0.4mm;">
+                    <span style="font-size: 9pt; font-weight: bold; color: #d32f2f;">%.2f €</span>
+                    <span style="font-size: 6pt; color: #333;">%s</span>
+                </div>
+                %s
             </div>
-            """, 
-            item.get("name"), 
-            item.get("price"), 
-            item.get("barcode")
+            """,
+            item.get("name"),
+            item.get("price") instanceof Number n ? n.doubleValue() : 0d,
+            unitLabel,
+            barcodeHtml
         );
     }
     
