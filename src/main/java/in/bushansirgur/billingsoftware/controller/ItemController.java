@@ -6,6 +6,10 @@ import in.bushansirgur.billingsoftware.io.ItemRequest;
 import in.bushansirgur.billingsoftware.io.ItemResponse;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -42,6 +46,21 @@ public class ItemController {
     @GetMapping("/items")
     public List<ItemResponse> readItems() {
         return itemService.fetchItems();
+    }
+
+    /**
+     * Paginated inventory catalog. Use this for /inventory table instead of loading all items.
+     * Example: GET /items/paged?page=0&size=20&search=whey&searchBy=name&category=Протеини&status=NORMAL&sort=name,asc
+     */
+    @GetMapping("/items/paged")
+    public Page<ItemResponse> readItemsPaged(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "name") String searchBy,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String status,
+            @PageableDefault(size = 20, sort = "name", direction = Sort.Direction.ASC) Pageable pageable
+    ) {
+        return itemService.fetchItemsPage(search, searchBy, category, status, pageable);
     }
 
     @GetMapping("/items/barcode/{barcode}")

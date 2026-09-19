@@ -9,11 +9,14 @@ import in.bushansirgur.billingsoftware.repository.InventoryAdjustmentRepository;
 import in.bushansirgur.billingsoftware.repository.InventoryAlertRepository;
 import in.bushansirgur.billingsoftware.repository.InventoryTransactionRepository;
 import in.bushansirgur.billingsoftware.repository.ItemRepository;
+import in.bushansirgur.billingsoftware.repository.ItemSpecifications;
 import in.bushansirgur.billingsoftware.repository.PromotionRepository;
 import in.bushansirgur.billingsoftware.repository.StockMovementRepository;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -184,6 +187,20 @@ public class ItemServiceImpl implements ItemService {
                     return convertToResponse(itemEntity);
                 })
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ItemResponse> fetchItemsPage(
+            String search,
+            String searchBy,
+            String categoryName,
+            String stockStatus,
+            Pageable pageable
+    ) {
+        return itemRepository
+                .findAll(ItemSpecifications.withFilters(search, searchBy, categoryName, stockStatus), pageable)
+                .map(this::convertToResponse);
     }
 
     @Override
