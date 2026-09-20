@@ -2,6 +2,7 @@ package in.bushansirgur.billingsoftware.controller;
 
 import in.bushansirgur.billingsoftware.io.AuthRequest;
 import in.bushansirgur.billingsoftware.io.AuthResponse;
+import in.bushansirgur.billingsoftware.service.LicenseService;
 import in.bushansirgur.billingsoftware.service.UserService;
 import in.bushansirgur.billingsoftware.service.impl.AppUserDetailsService;
 import in.bushansirgur.billingsoftware.util.JwtUtil;
@@ -25,9 +26,11 @@ public class AuthController {
     private final AppUserDetailsService appUserDetailsService;
     private final UserService userService;
     private final JwtUtil jwtUtil;
+    private final LicenseService licenseService;
 
     @PostMapping({"/login", "/api/v1.0/login"})
     public AuthResponse login(@RequestBody AuthRequest request) throws Exception {
+        licenseService.assertLicenseActive();
         authenticate(request.getEmail(), request.getPassword());
         final UserDetails userDetails = appUserDetailsService.loadUserByUsername(request.getEmail());
         final String jwtToken = jwtUtil.generateToken(userDetails);
@@ -44,9 +47,9 @@ public class AuthController {
     private void authenticate(String email, String password) throws Exception {
         try {
             authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password));
-        }catch (DisabledException e) {
+        } catch (DisabledException e) {
             throw new Exception("User disabled");
-        }catch (BadCredentialsException e) {
+        } catch (BadCredentialsException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email or password is incorrect");
         }
     }

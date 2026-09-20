@@ -92,6 +92,7 @@ public class SecurityConfig {
                     ).hasRole("ADMIN")
                     .requestMatchers("/reports/**").hasRole("ADMIN")
                     .requestMatchers("/dashboard", "/dashboard/**").hasRole("ADMIN")
+                    .requestMatchers("/license/status").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/inventory", "/inventory/**").hasRole("ADMIN")
 
