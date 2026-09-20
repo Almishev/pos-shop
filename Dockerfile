@@ -19,6 +19,9 @@ RUN mvn clean package -DskipTests
 # Runtime stage
 FROM eclipse-temurin:21-jdk-alpine
 
+# pg_dump for full DB backups; curl for HEALTHCHECK
+RUN apk add --no-cache postgresql-client curl
+
 # Set working directory
 WORKDIR /app
 

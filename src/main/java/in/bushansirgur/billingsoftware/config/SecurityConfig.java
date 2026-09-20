@@ -86,7 +86,9 @@ public class SecurityConfig {
                             "/admin/users/**",
                             "/admin/categories/**",
                             "/admin/inventory/**",
-                            "/admin/import/**"
+                            "/admin/import/**",
+                            "/admin/backup",
+                            "/admin/backup/**"
                     ).hasRole("ADMIN")
                     .requestMatchers("/reports/**").hasRole("ADMIN")
                     .requestMatchers("/dashboard", "/dashboard/**").hasRole("ADMIN")
