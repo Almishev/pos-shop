@@ -104,54 +104,81 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         java.util.Optional<CashDrawerSessionEntity> sessionOpt = java.util.Optional.empty();
         
         if (aggUsername != null) {
-            // Първо винаги търси сесия по касиер (email или име) - това е най-сигурното
+            // 1) Сесия за подадената/днешна дата
             sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(aggUsername, reportDate);
             if (sessionOpt.isEmpty() && displayName != null) {
                 sessionOpt = cashDrawerSessionRepository.findActiveSessionByCashierAndDate(displayName, reportDate);
             }
+
+            // 2) Закъснение след полунощ: ACTIVE сесия от друг календарен ден (дата на Контрол на касата)
+            if (sessionOpt.isEmpty()) {
+                sessionOpt = findLatestActiveSessionForCashier(aggUsername);
+                if (sessionOpt.isEmpty() && displayName != null) {
+                    sessionOpt = findLatestActiveSessionForCashier(displayName);
+                }
+                if (sessionOpt.isPresent()) {
+                    log.info("Shift report debug -> Found ACTIVE session spanning midnight: sessionDate={}, start={}",
+                            sessionOpt.get().getSessionDate(), sessionOpt.get().getSessionStartTime());
+                }
+            }
             
-            // Ако не намери по касиер, опитай по device (но само ако device-ът е подаден)
+            // 3) По device — първо за датата, после всяка ACTIVE за устройството (същият касиер)
             if (sessionOpt.isEmpty() && request.getDeviceSerialNumber() != null && !request.getDeviceSerialNumber().isBlank()) {
-                var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(request.getDeviceSerialNumber(), reportDate);
+                var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(
+                        request.getDeviceSerialNumber(), reportDate);
+                if (byDevice.isEmpty()) {
+                    byDevice = findLatestActiveSessionForDeviceMatchingCashier(
+                            request.getDeviceSerialNumber(), aggUsername, displayName);
+                }
                 if (byDevice.isPresent()) {
-                    // Провери дали device session-а е за същия касиер
                     String deviceCashier = byDevice.get().getCashierUsername();
-                    if (deviceCashier != null && (deviceCashier.equalsIgnoreCase(aggUsername) || 
+                    if (deviceCashier != null && (deviceCashier.equalsIgnoreCase(aggUsername) ||
                         (displayName != null && deviceCashier.equalsIgnoreCase(displayName)))) {
                         sessionOpt = byDevice;
-                        log.info("Shift report debug -> Found session by device '{}' for cashier '{}'", 
+                        log.info("Shift report debug -> Found session by device '{}' for cashier '{}'",
                                 request.getDeviceSerialNumber(), deviceCashier);
                     } else {
-                        log.warn("Shift report debug -> Device '{}' session belongs to different cashier '{}', ignoring", 
+                        log.warn("Shift report debug -> Device '{}' session belongs to different cashier '{}', ignoring",
                                 request.getDeviceSerialNumber(), deviceCashier);
                     }
                 }
             }
             
-            // Ако намери сесия по касиер, използвай device-а от тази сесия (независимо какво е подадено)
             if (sessionOpt.isPresent()) {
-                var s = sessionOpt.get();
-                if (s.getSessionStartTime() != null) sessionFrom = s.getSessionStartTime();
-                if (s.getSessionEndTime() != null) sessionTo = s.getSessionEndTime();
-                
-                // Device-ът от сесията ще се използва при създаването на отчета
+                CashDrawerSessionEntity s = sessionOpt.get();
+                // Отчетът е за работния ден на касата, не за календарното „днес“ след полунощ
+                if (s.getSessionDate() != null) {
+                    reportDate = s.getSessionDate();
+                }
+                if (s.getSessionStartTime() != null) {
+                    sessionFrom = s.getSessionStartTime();
+                } else {
+                    sessionFrom = reportDate.atStartOfDay();
+                }
+                // Отворена смяна: до момента на затваряне (вкл. продажби след 00:00)
+                if (s.getSessionEndTime() != null) {
+                    sessionTo = s.getSessionEndTime();
+                } else {
+                    sessionTo = LocalDateTime.now();
+                }
+
                 String sessionDevice = s.getDeviceSerialNumber();
                 if (sessionDevice != null && !sessionDevice.isBlank()) {
-                    log.info("Shift report debug -> Found active session with device '{}' (request had '{}')", 
+                    log.info("Shift report debug -> Found active session with device '{}' (request had '{}')",
                             sessionDevice, request.getDeviceSerialNumber());
                 }
-                
+
                 String sessionCashier = s.getCashierUsername();
                 if (sessionCashier != null && !sessionCashier.isBlank()) {
                     resolvedSessionCashier = sessionCashier;
                     log.info("Shift report debug -> Using cashier '{}' from active session", sessionCashier);
                 }
             } else {
-                log.warn("Shift report debug -> No active session found for cashier '{}' or device '{}'", 
+                log.warn("Shift report debug -> No active session found for cashier '{}' or device '{}'",
                         aggUsername, request.getDeviceSerialNumber());
             }
             
-            // НАП изискване: Не може да се генерира shift report без активна cash drawer session
+            // Не може сменен отчет без активна cash drawer session
             if (sessionOpt.isEmpty()) {
                 throw new org.springframework.web.server.ResponseStatusException(
                         org.springframework.http.HttpStatus.PRECONDITION_FAILED,
@@ -160,7 +187,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                         "Това е задължително изискване на НАП.");
             }
             
-            log.info("Shift report debug -> session from: {} to {}", sessionFrom, sessionTo);
+            log.info("Shift report debug -> reportDate={}, session from: {} to {}", reportDate, sessionFrom, sessionTo);
 
             // сумирай по всички възможни ключове за максимална съвместимост
             final java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>();
@@ -189,13 +216,33 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             
             // Първо опитай да намериш cash drawer session по device serial number
             if (request.getDeviceSerialNumber() != null && !request.getDeviceSerialNumber().isBlank()) {
-                var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(request.getDeviceSerialNumber(), reportDate);
+                var byDevice = cashDrawerSessionRepository.findActiveSessionByDeviceAndDate(
+                        request.getDeviceSerialNumber(), reportDate);
+                if (byDevice.isEmpty()) {
+                    byDevice = cashDrawerSessionRepository
+                            .findByDeviceSerialNumberAndStatus(
+                                    request.getDeviceSerialNumber(),
+                                    CashDrawerSessionEntity.SessionStatus.ACTIVE)
+                            .stream()
+                            .max(java.util.Comparator.comparing(
+                                    CashDrawerSessionEntity::getSessionStartTime,
+                                    java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+                }
                 if (byDevice.isPresent()) {
                     var session = byDevice.get();
+                    sessionOpt = byDevice;
                     resolved = session.getCashierUsername();
-                    log.info("Shift report fallback -> Found session by device: cashier={}", resolved);
-                    if (session.getSessionStartTime() != null) sessionFrom = session.getSessionStartTime();
-                    if (session.getSessionEndTime() != null) sessionTo = session.getSessionEndTime();
+                    log.info("Shift report fallback -> Found session by device: cashier={}, sessionDate={}",
+                            resolved, session.getSessionDate());
+                    if (session.getSessionDate() != null) {
+                        reportDate = session.getSessionDate();
+                    }
+                    if (session.getSessionStartTime() != null) {
+                        sessionFrom = session.getSessionStartTime();
+                    }
+                    sessionTo = session.getSessionEndTime() != null
+                            ? session.getSessionEndTime()
+                            : LocalDateTime.now();
                 }
             }
             
@@ -481,14 +528,18 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         }
 
         LocalDateTime startOfDay = reportDate.atStartOfDay();
-        LocalDateTime endOfDay = reportDate.atTime(LocalTime.MAX);
+        // Съобразено с НАП / календар: продажбите се отчитат по час на бона (00:00–23:59 на reportDate).
+        // Нощна смяна 16:00–01:00: оборотът след полунощ влиза в дневния за следващия календарен ден.
+        LocalDateTime reportEndTime = reportDate.atTime(LocalTime.MAX);
         
         // Проверка за съществуващ общ дневен отчет за деня
         List<FiscalReportEntity> existingReports = fiscalReportRepository.findByReportTypeAndDateRange(
                 FiscalReportEntity.ReportType.STORE_DAILY, reportDate, reportDate);
         
         LocalDateTime reportStartTime = startOfDay;
-        String reportNotes = "Общ дневен отчет за целия магазин";
+        String reportNotes = String.format(
+                "Общ дневен отчет за магазина (календарен ден %s, 00:00–23:59)",
+                reportDate);
         
         // Ако има съществуващ отчет(и), намираме последния и изчисляваме данните само за продажбите след него
         if (!existingReports.isEmpty()) {
@@ -499,28 +550,31 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             
             if (lastReport != null) {
                 reportStartTime = lastReport.getGeneratedAt();
-                reportNotes = String.format("Допълнителен общ дневен отчет за магазина (след първия отчет от %s)", 
-                        lastReport.getGeneratedAt().toString());
-                log.info("Generating additional store daily report for date {} after previous report at {}", 
-                        reportDate, reportStartTime);
+                reportNotes = String.format(
+                        "Допълнителен общ дневен отчет за магазина (след първия отчет от %s, календарен ден %s)",
+                        lastReport.getGeneratedAt(), reportDate);
+                log.info("Generating additional store daily report for date {} after previous report at {} until {}",
+                        reportDate, reportStartTime, reportEndTime);
             }
         }
         
-        // Изчисляване на реални данни за целия магазин за периода (от началото на деня или след последния отчет)
-        Long totalReceipts = orderEntityRepository.countOrdersBetween(reportStartTime, endOfDay);
-        Double totalSales = orderEntityRepository.sumSalesBetween(reportStartTime, endOfDay);
+        log.info("Store daily window for {} (NAP/calendar): {} .. {}", reportDate, reportStartTime, reportEndTime);
+
+        // Изчисляване на реални данни за целия магазин за календарния ден
+        Long totalReceipts = orderEntityRepository.countOrdersBetween(reportStartTime, reportEndTime);
+        Double totalSales = orderEntityRepository.sumSalesBetween(reportStartTime, reportEndTime);
         
         // ДДС от записаните поръчки (по реални ставки 20/9/0)
-        Double totalVAT = orderEntityRepository.sumTaxBetween(reportStartTime, endOfDay);
+        Double totalVAT = orderEntityRepository.sumTaxBetween(reportStartTime, reportEndTime);
         if (totalVAT == null) totalVAT = 0.0;
         Double totalNetSales = (totalSales != null ? totalSales : 0.0) - totalVAT;
         
         // Получаване на данни по касиери за периода
-        List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(reportStartTime, endOfDay);
-        String cashierBreakdownJson = buildCashierBreakdownJson(cashierData, reportStartTime, endOfDay);
+        List<Object[]> cashierData = orderEntityRepository.summarizeByCashier(reportStartTime, reportEndTime);
+        String cashierBreakdownJson = buildCashierBreakdownJson(cashierData, reportStartTime, reportEndTime);
         
         // Генериране на обща разбивка по плащания за целия магазин
-        String paymentBreakdownJson = buildStorePaymentBreakdownJson(reportStartTime, endOfDay);
+        String paymentBreakdownJson = buildStorePaymentBreakdownJson(reportStartTime, reportEndTime);
         
         // Създаване на общ дневен отчет за магазина
         FiscalReportEntity report = FiscalReportEntity.builder()
@@ -1273,6 +1327,41 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         }
     }
     
+    /**
+     * Latest ACTIVE till session for a cashier, any calendar date (late close after midnight).
+     */
+    private java.util.Optional<CashDrawerSessionEntity> findLatestActiveSessionForCashier(String cashierKey) {
+        if (cashierKey == null || cashierKey.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return cashDrawerSessionRepository.findActiveSessionsByCashier(cashierKey).stream()
+                .max(java.util.Comparator.comparing(
+                        CashDrawerSessionEntity::getSessionStartTime,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+    }
+
+    /**
+     * Latest ACTIVE session on a device that belongs to the given cashier (email or display name).
+     */
+    private java.util.Optional<CashDrawerSessionEntity> findLatestActiveSessionForDeviceMatchingCashier(
+            String deviceSerial, String aggUsername, String displayName) {
+        if (deviceSerial == null || deviceSerial.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return cashDrawerSessionRepository
+                .findByDeviceSerialNumberAndStatus(deviceSerial, CashDrawerSessionEntity.SessionStatus.ACTIVE)
+                .stream()
+                .filter(s -> {
+                    String who = s.getCashierUsername();
+                    if (who == null) return false;
+                    if (aggUsername != null && who.equalsIgnoreCase(aggUsername)) return true;
+                    return displayName != null && who.equalsIgnoreCase(displayName);
+                })
+                .max(java.util.Comparator.comparing(
+                        CashDrawerSessionEntity::getSessionStartTime,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+    }
+
     private String escapeXml(String text) {
         if (text == null) {
             return "";
