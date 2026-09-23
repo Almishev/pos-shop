@@ -32,7 +32,7 @@ public class OrderRequest {
         private String name;
         private String barcode;
         private Double price;
-        private Integer quantity;
+        private Double quantity;
         /** VAT rate as fraction: 0.20, 0.09, 0.00 */
         private Double vatRate;
     }

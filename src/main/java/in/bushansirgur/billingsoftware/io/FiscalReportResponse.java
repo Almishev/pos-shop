@@ -32,6 +32,8 @@ public class FiscalReportResponse {
     private String cashierBreakdown;
     private BigDecimal cashDrawerStartAmount;
     private BigDecimal cashDrawerEndAmount;
+    /** JSON VAT groups: {"20":{"base":1.0,"vat":0.2},"9":{"base":...,"vat":...}} */
+    private String taxBreakdown;
     
     public static FiscalReportResponse fromEntity(FiscalReportEntity entity) {
         return FiscalReportResponse.builder()
@@ -52,6 +54,7 @@ public class FiscalReportResponse {
                 .cashierBreakdown(entity.getCashierBreakdown())
                 .cashDrawerStartAmount(entity.getCashDrawerStartAmount())
                 .cashDrawerEndAmount(entity.getCashDrawerEndAmount())
+                .taxBreakdown(entity.getTaxBreakdown())
                 .build();
     }
 }

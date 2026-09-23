@@ -294,7 +294,7 @@ public class ExcelImportServiceImpl implements ExcelImportService {
             String itemName = getCellValueAsString(row.getCell(2));
             String itemDescription = getCellValueAsString(row.getCell(3));
             String barcode = getCellValueAsString(row.getCell(4));
-            BigDecimal vatRate = getCellValueAsBigDecimal(row.getCell(5));
+            BigDecimal vatRate = normalizeVatRate(getCellValueAsBigDecimal(row.getCell(5)));
             BigDecimal price = getCellValueAsBigDecimal(row.getCell(6));
             Integer stockQuantity = getCellValueAsInteger(row.getCell(7));
             BigDecimal costPrice = getCellValueAsBigDecimal(row.getCell(8));
@@ -402,6 +402,15 @@ public class ExcelImportServiceImpl implements ExcelImportService {
         }
     }
 
+    /** Accept 0.20 or 20 (percent) and store as fraction. */
+    private BigDecimal normalizeVatRate(BigDecimal vatRate) {
+        if (vatRate == null) return null;
+        if (vatRate.compareTo(BigDecimal.ONE) > 0) {
+            return vatRate.divide(new BigDecimal("100"), 4, java.math.RoundingMode.HALF_UP);
+        }
+        return vatRate;
+    }
+
     private Integer getCellValueAsInteger(Cell cell) {
         if (cell == null) return null;
         
@@ -505,7 +514,8 @@ public class ExcelImportServiceImpl implements ExcelImportService {
             String itemName = values.length > 2 ? values[2] : null;
             String itemDescription = values.length > 3 ? values[3] : "";
             String barcode = values.length > 4 ? values[4] : "";
-            BigDecimal vatRate = values.length > 5 && !values[5].isEmpty() ? new BigDecimal(values[5]) : new BigDecimal("0.20");
+            BigDecimal vatRate = normalizeVatRate(
+                    values.length > 5 && !values[5].isEmpty() ? new BigDecimal(values[5]) : new BigDecimal("0.20"));
             BigDecimal price = values.length > 6 && !values[6].isEmpty() ? new BigDecimal(values[6]) : null;
             Integer stockQuantity = values.length > 7 && !values[7].isEmpty() ? Integer.parseInt(values[7]) : 0;
             BigDecimal costPrice = values.length > 8 && !values[8].isEmpty() ? new BigDecimal(values[8]) : null;

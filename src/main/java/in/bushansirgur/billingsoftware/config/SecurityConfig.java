@@ -53,9 +53,9 @@ public class SecurityConfig {
                             "/cash-drawer/active-sessions",
                             "/cash-drawer/sessions/**"
                     ).hasRole("ADMIN")
-                    .requestMatchers(HttpMethod.POST, "/cash-drawer/start", "/cash-drawer/end/**").hasRole("USER")
-                    .requestMatchers(HttpMethod.GET, "/cash-drawer/active").hasRole("USER")
-                    .requestMatchers("/cash-drawer/**").hasRole("USER")
+                    .requestMatchers(HttpMethod.POST, "/cash-drawer/start", "/cash-drawer/end/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/cash-drawer/active").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers("/cash-drawer/**").hasAnyRole("USER", "ADMIN")
 
                     // Fiscal devices — writes admin-only; reads for USER+ADMIN
                     .requestMatchers(HttpMethod.POST, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
@@ -63,15 +63,20 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.DELETE, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.GET, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers(HttpMethod.GET, "/admin/devices/*/status", "/admin/devices/*/ready").hasAnyRole("USER", "ADMIN")
-                    .requestMatchers(HttpMethod.POST, "/admin/devices/*/x-report", "/admin/devices/*/z-report").hasRole("USER")
+                    .requestMatchers(HttpMethod.POST, "/admin/devices/*/x-report", "/admin/devices/*/z-report").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/admin/devices/**").hasRole("ADMIN")
 
                     // Fiscal receipts
                     .requestMatchers("/admin/receipts", "/admin/receipts/**").hasAnyRole("USER", "ADMIN")
 
-                    // Fiscal reports — shift/Z are cashier-only; archive admin-only
+                    // Fiscal reports — store daily / monthly / yearly admin-only; shift for USER+ADMIN
                     .requestMatchers(HttpMethod.POST, "/admin/fiscal-reports/archive/**").hasRole("ADMIN")
-                    .requestMatchers(HttpMethod.POST, "/admin/fiscal-reports/shift", "/admin/fiscal-reports/z-report").hasRole("USER")
+                    .requestMatchers(HttpMethod.POST,
+                            "/admin/fiscal-reports/store-daily",
+                            "/admin/fiscal-reports/monthly",
+                            "/admin/fiscal-reports/yearly"
+                    ).hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/admin/fiscal-reports/shift", "/admin/fiscal-reports/z-report").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
 
                     // Labels & promotions — authenticated (not public)
@@ -79,6 +84,7 @@ public class SecurityConfig {
                     .requestMatchers("/admin/promotions/**").hasAnyRole("USER", "ADMIN")
 
                     // Admin-only management
+                    .requestMatchers(HttpMethod.POST, "/admin/register").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/admin/items", "/admin/items/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.PUT, "/admin/items", "/admin/items/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.DELETE, "/admin/items", "/admin/items/**").hasRole("ADMIN")
@@ -96,11 +102,11 @@ public class SecurityConfig {
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/inventory", "/inventory/**").hasRole("ADMIN")
 
-                    // Orders — create sales = cashier only; refund/view for both; delete/archive admin
+                    // Orders — create sales = cashier (+ admin); refund/view for both; delete/archive admin
                     .requestMatchers(HttpMethod.DELETE, "/orders/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers(HttpMethod.POST, "/orders/archive/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/orders/*/refund").hasAnyRole("USER", "ADMIN")
-                    .requestMatchers(HttpMethod.POST, "/orders").hasRole("USER")
+                    .requestMatchers(HttpMethod.POST, "/orders").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/orders", "/orders/**").hasAnyRole("USER", "ADMIN")
 
                     // Catalog & loyalty

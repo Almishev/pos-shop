@@ -27,6 +27,9 @@ public interface OrderEntityRepository extends JpaRepository<OrderEntity, Long> 
     @Query("SELECT COUNT(o) FROM OrderEntity o WHERE DATE(o.createdAt) = :date")
     Long countByOrderDate(@Param("date") LocalDate date);
 
+    @Query("SELECT COALESCE(SUM(o.tax),0) FROM OrderEntity o WHERE DATE(o.createdAt) = :date")
+    Double sumTaxByDate(@Param("date") LocalDate date);
+
     @Query("SELECT o FROM OrderEntity o ORDER BY o.createdAt DESC")
     List<OrderEntity> findRecentOrders(Pageable pageable);
 

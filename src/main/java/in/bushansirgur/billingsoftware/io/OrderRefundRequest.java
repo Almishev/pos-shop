@@ -24,7 +24,7 @@ public class OrderRefundRequest {
     @Builder
     public static class RefundItem {
         private String itemId;
-        private Integer quantity;
+        private Double quantity;
     }
 }
 

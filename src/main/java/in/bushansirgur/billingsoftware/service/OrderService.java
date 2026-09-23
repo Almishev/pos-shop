@@ -23,6 +23,8 @@ public interface OrderService {
 
     Long countByOrderDate(LocalDate date);
 
+    Double sumTaxByDate(LocalDate date);
+
     List<OrderResponse> findRecentOrders();
 
     /**

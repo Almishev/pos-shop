@@ -60,6 +60,10 @@ public class FiscalReportEntity {
     // Payment method breakdown for shift reports (JSON)
     @Column(columnDefinition = "TEXT")
     private String paymentBreakdown;
+
+    // VAT groups breakdown JSON: {"20":{"base":..,"vat":..},"9":{...}}
+    @Column(columnDefinition = "TEXT")
+    private String taxBreakdown;
     
     @PrePersist
     protected void onCreate() {

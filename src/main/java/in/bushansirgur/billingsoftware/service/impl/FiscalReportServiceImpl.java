@@ -2,6 +2,8 @@ package in.bushansirgur.billingsoftware.service.impl;
 
 import in.bushansirgur.billingsoftware.entity.FiscalReportEntity;
 import in.bushansirgur.billingsoftware.entity.CashDrawerSessionEntity;
+import in.bushansirgur.billingsoftware.entity.OrderEntity;
+import in.bushansirgur.billingsoftware.entity.OrderItemEntity;
 import in.bushansirgur.billingsoftware.io.FiscalReportRequest;
 import in.bushansirgur.billingsoftware.io.FiscalReportResponse;
 import in.bushansirgur.billingsoftware.repository.FiscalReceiptRepository;
@@ -20,10 +22,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -375,6 +381,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         }
         
         String paymentBreakdownJson = buildPaymentBreakdownJson(sessionFrom, sessionTo, aggUsername, cashierName);
+        String taxBreakdownJson = buildTaxBreakdownJson(sessionFrom, sessionTo, aggUsername != null ? aggUsername : cashierName);
         FiscalReportEntity report = FiscalReportEntity.builder()
                 .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.SHIFT, reportDate))
                 .reportType(FiscalReportEntity.ReportType.SHIFT)
@@ -389,6 +396,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .cashDrawerStartAmount(cashDrawerStartAmount)
                 .cashDrawerEndAmount(cashDrawerEndAmount)
                 .paymentBreakdown(paymentBreakdownJson)
+                .taxBreakdown(taxBreakdownJson)
                 .build();
         
         report = fiscalReportRepository.save(report);
@@ -575,6 +583,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         
         // Генериране на обща разбивка по плащания за целия магазин
         String paymentBreakdownJson = buildStorePaymentBreakdownJson(reportStartTime, reportEndTime);
+        String taxBreakdownJson = buildTaxBreakdownJson(reportStartTime, reportEndTime, null);
         
         // Създаване на общ дневен отчет за магазина
         FiscalReportEntity report = FiscalReportEntity.builder()
@@ -591,6 +600,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .cashDrawerEndAmount(null) // Няма контрол на касата за общ отчет
                 .cashierBreakdown(cashierBreakdownJson) // Данни по касиери
                 .paymentBreakdown(paymentBreakdownJson) // Разбивка по плащания
+                .taxBreakdown(taxBreakdownJson)
                 .notes(request.getNotes() != null ? request.getNotes() : reportNotes)
                 .build();
         
@@ -648,6 +658,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         
         // Генериране на обща разбивка по плащания за целия магазин за месеца
         String paymentBreakdownJson = buildStorePaymentBreakdownJson(startOfMonthDateTime, endOfMonthDateTime);
+        String taxBreakdownJson = buildTaxBreakdownJson(startOfMonthDateTime, endOfMonthDateTime, null);
         
         // За месечен отчет използваме главното фискално устройство или "Всички устройства"
         String deviceSerial = request.getDeviceSerialNumber();
@@ -678,6 +689,7 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .notes(request.getNotes())
                 .cashierBreakdown(cashierBreakdownJson)
                 .paymentBreakdown(paymentBreakdownJson)
+                .taxBreakdown(taxBreakdownJson)
                 .build();
         
         report = fiscalReportRepository.save(report);
@@ -701,25 +713,29 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                     "Yearly report for " + reportDate.getYear() + " already exists");
         }
         
-        // Изчисляване на годишна статистика
         LocalDateTime startOfYearDateTime = startOfYear.atStartOfDay();
         LocalDateTime endOfYearDateTime = endOfYear.atTime(LocalTime.MAX);
-        
-        Long totalReceipts = fiscalReceiptRepository.countByDateRange(startOfYearDateTime, endOfYearDateTime);
-        Double totalSales = fiscalReceiptRepository.sumGrandTotalByDateRange(startOfYearDateTime, endOfYearDateTime);
-        Double totalVAT = fiscalReceiptRepository.sumVatAmountByDateRange(startOfYearDateTime, endOfYearDateTime);
+
+        // Годишна статистика от поръчки (същият източник като ден/месец/смяна)
+        Long totalReceipts = orderEntityRepository.countOrdersBetween(startOfYearDateTime, endOfYearDateTime);
+        Double totalSales = orderEntityRepository.sumSalesBetween(startOfYearDateTime, endOfYearDateTime);
+        Double totalVAT = orderEntityRepository.sumTaxBetween(startOfYearDateTime, endOfYearDateTime);
+        if (totalVAT == null) totalVAT = 0.0;
+        if (totalSales == null) totalSales = 0.0;
+        Double totalNetSales = totalSales - totalVAT;
+        String taxBreakdownJson = buildTaxBreakdownJson(startOfYearDateTime, endOfYearDateTime, null);
         
         FiscalReportEntity report = FiscalReportEntity.builder()
                 .reportNumber(generateReportNumber(FiscalReportEntity.ReportType.YEARLY, reportDate))
                 .reportType(FiscalReportEntity.ReportType.YEARLY)
                 .reportDate(reportDate)
                 .totalReceipts(totalReceipts != null ? totalReceipts.intValue() : 0)
-                .totalSales(totalSales != null ? BigDecimal.valueOf(totalSales) : BigDecimal.ZERO)
-                .totalVAT(totalVAT != null ? BigDecimal.valueOf(totalVAT) : BigDecimal.ZERO)
-                .totalNetSales(totalSales != null && totalVAT != null ? 
-                        BigDecimal.valueOf(totalSales - totalVAT) : BigDecimal.ZERO)
+                .totalSales(BigDecimal.valueOf(totalSales))
+                .totalVAT(BigDecimal.valueOf(totalVAT))
+                .totalNetSales(BigDecimal.valueOf(totalNetSales))
                 .cashierName(request.getCashierName())
                 .deviceSerialNumber(request.getDeviceSerialNumber())
+                .taxBreakdown(taxBreakdownJson)
                 .notes(request.getNotes())
                 .build();
         
@@ -972,6 +988,56 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             return json;
         } catch (Exception e) {
             log.warn("Failed to build store payment breakdown json: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * VAT groups from order line items (gross VAT-inclusive).
+     * @param cashierFilter if non-null, only that cashier (email/name match on cashierUsername)
+     */
+    private String buildTaxBreakdownJson(LocalDateTime from, LocalDateTime to, String cashierFilter) {
+        try {
+            List<OrderEntity> orders = orderEntityRepository.findAllByCreatedAtBetweenOrderByCreatedAtAsc(from, to);
+            Map<Integer, BigDecimal[]> byPct = new TreeMap<>((a, b) -> Integer.compare(b, a));
+            String filter = cashierFilter != null ? cashierFilter.trim().toLowerCase(Locale.ROOT) : null;
+
+            for (OrderEntity order : orders) {
+                if (filter != null) {
+                    String cu = order.getCashierUsername() != null ? order.getCashierUsername().trim().toLowerCase(Locale.ROOT) : "";
+                    if (!cu.equals(filter)) continue;
+                }
+                if (order.getItems() == null) continue;
+                for (OrderItemEntity oi : order.getItems()) {
+                    double rate = oi.getVatRate() != null ? oi.getVatRate() : 0.20;
+                    if (rate > 1.0) rate = rate / 100.0;
+                    int pct = (int) Math.round(rate * 100.0);
+                    double price = oi.getPrice() != null ? oi.getPrice() : 0.0;
+                    double qty = oi.getQuantity() != null ? oi.getQuantity() : 0.0;
+                    double line = price * qty;
+                    double base = rate > 0 ? line / (1.0 + rate) : line;
+                    double vat = line - base;
+                    byPct.computeIfAbsent(pct, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+                    BigDecimal[] agg = byPct.get(pct);
+                    agg[0] = agg[0].add(BigDecimal.valueOf(base));
+                    agg[1] = agg[1].add(BigDecimal.valueOf(vat));
+                }
+            }
+
+            StringBuilder json = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<Integer, BigDecimal[]> e : byPct.entrySet()) {
+                if (!first) json.append(',');
+                first = false;
+                BigDecimal base = e.getValue()[0].setScale(2, RoundingMode.HALF_UP);
+                BigDecimal vat = e.getValue()[1].setScale(2, RoundingMode.HALF_UP);
+                json.append('"').append(e.getKey()).append("\":{\"base\":").append(base)
+                        .append(",\"vat\":").append(vat).append('}');
+            }
+            json.append('}');
+            return json.toString();
+        } catch (Exception e) {
+            log.warn("Failed to build tax breakdown json: {}", e.getMessage());
             return null;
         }
     }

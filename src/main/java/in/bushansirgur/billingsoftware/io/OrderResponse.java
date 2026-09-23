@@ -36,11 +36,11 @@ public class OrderResponse {
         private String name;
         private String barcode;
         private Double price;
-        private Integer quantity;
+        private Double quantity;
         private Double vatRate;
         /** Already returned qty across prior refunds (original orders only). */
-        private Integer refundedQuantity;
+        private Double refundedQuantity;
         /** Still returnable qty (original orders only). */
-        private Integer returnableQuantity;
+        private Double returnableQuantity;
     }
 }

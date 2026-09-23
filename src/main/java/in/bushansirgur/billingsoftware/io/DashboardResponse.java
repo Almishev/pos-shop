@@ -15,5 +15,9 @@ public class DashboardResponse {
 
     private Double todaySales;
     private Long todayOrderCount;
+    private Double todayVAT;
+    private Long todayFiscalReceipts;
+    private Long activeDevices;
+    private Long totalDevices;
     private List<OrderResponse> recentOrders;
 }

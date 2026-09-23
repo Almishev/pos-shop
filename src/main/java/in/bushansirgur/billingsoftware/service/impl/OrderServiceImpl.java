@@ -59,25 +59,53 @@ public class OrderServiceImpl implements OrderService {
 
         OrderEntity newOrder = convertToOrderEntity(request);
 
+        List<OrderItemEntity> orderItems = request.getCartItems().stream()
+                .map(this::convertToOrderItemEntity)
+                .collect(Collectors.toList());
+
+        // Authoritative totals from line items (VAT-inclusive prices)
+        double computedSubtotal = 0.0;
+        double computedTax = 0.0;
+        for (OrderItemEntity item : orderItems) {
+            double price = item.getPrice() != null ? item.getPrice() : 0.0;
+            double qty = item.getQuantity() != null ? item.getQuantity() : 0.0;
+            double lineGross = price * qty;
+            computedSubtotal += lineGross;
+            double rate = item.getVatRate() != null ? item.getVatRate() : 0.20;
+            if (rate > 1.0) {
+                rate = rate / 100.0;
+                item.setVatRate(rate);
+            }
+            if (rate > 0 && lineGross > 0) {
+                double base = lineGross / (1.0 + rate);
+                computedTax += (lineGross - base);
+            }
+        }
+        computedSubtotal = Math.round(computedSubtotal * 100.0) / 100.0;
+        computedTax = Math.round(computedTax * 100.0) / 100.0;
+        newOrder.setSubtotal(computedSubtotal);
+        newOrder.setTax(computedTax);
+        newOrder.setGrandTotal(computedSubtotal);
+
         PaymentDetails paymentDetails = new PaymentDetails();
-        paymentDetails.setStatus(newOrder.getPaymentMethod() == PaymentMethod.CASH ?
-                PaymentDetails.PaymentStatus.COMPLETED : PaymentDetails.PaymentStatus.PENDING);
+        // Card/split are approved on the client before create (sim); cash is immediate
+        paymentDetails.setStatus(PaymentDetails.PaymentStatus.COMPLETED);
         if (newOrder.getPaymentMethod() == PaymentMethod.SPLIT) {
             paymentDetails.setCashAmount(request.getCashAmount());
             paymentDetails.setCardAmount(request.getCardAmount());
         }
         newOrder.setPaymentDetails(paymentDetails);
-        
-        List<OrderItemEntity> orderItems = request.getCartItems().stream()
-                .map(this::convertToOrderItemEntity)
-                .collect(Collectors.toList());
+
         newOrder.setItems(orderItems);
         newOrder.setCashierUsername(cashierUsername);
         
         newOrder = orderEntityRepository.save(newOrder);
 
         for (OrderRequest.OrderItemRequest itemReq : request.getCartItems()) {
-            inventoryService.processSaleTransaction(itemReq.getItemId(), itemReq.getQuantity(), newOrder.getOrderId());
+            int invQty = itemReq.getQuantity() != null
+                    ? (int) Math.max(1, Math.round(itemReq.getQuantity()))
+                    : 1;
+            inventoryService.processSaleTransaction(itemReq.getItemId(), invQty, newOrder.getOrderId());
         }
 
         return convertToResponse(newOrder);
@@ -99,7 +127,7 @@ public class OrderServiceImpl implements OrderService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order already fully refunded");
         }
 
-        Map<String, Integer> alreadyReturned = getAlreadyReturnedQuantities(original.getOrderId());
+        Map<String, Double> alreadyReturned = getAlreadyReturnedQuantities(original.getOrderId());
         Map<String, OrderItemEntity> originalByItemId = original.getItems().stream()
                 .collect(Collectors.toMap(OrderItemEntity::getItemId, oi -> oi, (a, b) -> a));
 
@@ -115,9 +143,10 @@ public class OrderServiceImpl implements OrderService {
                 if (oi == null) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Item not in order: " + ri.getItemId());
                 }
-                int returned = alreadyReturned.getOrDefault(ri.getItemId(), 0);
-                int available = Math.max(0, oi.getQuantity() - returned);
-                if (ri.getQuantity() > available) {
+                double returned = alreadyReturned.getOrDefault(ri.getItemId(), 0.0);
+                double origQty = oi.getQuantity() != null ? oi.getQuantity() : 0.0;
+                double available = Math.max(0, origQty - returned);
+                if (ri.getQuantity() > available + 1e-9) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                             "Cannot return more than available for " + oi.getName()
                                     + " (available: " + available + ")");
@@ -134,8 +163,9 @@ public class OrderServiceImpl implements OrderService {
             }
         } else {
             for (OrderItemEntity oi : original.getItems()) {
-                int returned = alreadyReturned.getOrDefault(oi.getItemId(), 0);
-                int available = Math.max(0, oi.getQuantity() - returned);
+                double returned = alreadyReturned.getOrDefault(oi.getItemId(), 0.0);
+                double origQty = oi.getQuantity() != null ? oi.getQuantity() : 0.0;
+                double available = Math.max(0, origQty - returned);
                 if (available <= 0) continue;
                 refundItems.add(OrderItemEntity.builder()
                         .itemId(oi.getItemId())
@@ -170,7 +200,7 @@ public class OrderServiceImpl implements OrderService {
             boolean restocked = inventoryService.processReturnTransaction(
                     ri.getItemId(),
                     ri.getBarcode(),
-                    Math.abs(ri.getQuantity()),
+                    (int) Math.max(1, Math.round(Math.abs(ri.getQuantity() != null ? ri.getQuantity() : 0))),
                     "REF-" + original.getOrderId());
             if (!restocked) {
                 skippedRestock.add(ri.getName() != null ? ri.getName() : ri.getItemId());
@@ -208,10 +238,12 @@ public class OrderServiceImpl implements OrderService {
 
         // Update returned map and decide status
         for (OrderItemEntity ri : refundItems) {
-            alreadyReturned.merge(ri.getItemId(), Math.abs(ri.getQuantity()), Integer::sum);
+            alreadyReturned.merge(ri.getItemId(), Math.abs(ri.getQuantity()), Double::sum);
         }
-        boolean fullyRefunded = original.getItems().stream().allMatch(oi ->
-                alreadyReturned.getOrDefault(oi.getItemId(), 0) >= oi.getQuantity());
+        boolean fullyRefunded = original.getItems().stream().allMatch(oi -> {
+            double origQty = oi.getQuantity() != null ? oi.getQuantity() : 0.0;
+            return alreadyReturned.getOrDefault(oi.getItemId(), 0.0) >= origQty - 1e-9;
+        });
         original.setStatus(fullyRefunded ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED);
         orderEntityRepository.save(original);
 
@@ -235,13 +267,13 @@ public class OrderServiceImpl implements OrderService {
         return convertToResponse(refund);
     }
 
-    private Map<String, Integer> getAlreadyReturnedQuantities(String orderId) {
-        Map<String, Integer> map = new HashMap<>();
+    private Map<String, Double> getAlreadyReturnedQuantities(String orderId) {
+        Map<String, Double> map = new HashMap<>();
         for (OrderEntity refund : orderEntityRepository.findByOriginalOrderId(orderId)) {
             if (refund.getItems() == null) continue;
             for (OrderItemEntity item : refund.getItems()) {
                 if (item.getItemId() == null || item.getQuantity() == null) continue;
-                map.merge(item.getItemId(), Math.abs(item.getQuantity()), Integer::sum);
+                map.merge(item.getItemId(), Math.abs(item.getQuantity()), Double::sum);
             }
         }
         return map;
@@ -251,6 +283,8 @@ public class OrderServiceImpl implements OrderService {
         Double vatRate = orderItemRequest.getVatRate();
         if (vatRate == null) {
             vatRate = 0.20;
+        } else if (vatRate > 1.0) {
+            vatRate = vatRate / 100.0;
         }
         return OrderItemEntity.builder()
                 .itemId(orderItemRequest.getItemId())
@@ -264,7 +298,7 @@ public class OrderServiceImpl implements OrderService {
 
     private OrderResponse convertToResponse(OrderEntity newOrder) {
         boolean isOriginalSale = newOrder.getOriginalOrderId() == null;
-        Map<String, Integer> returned = isOriginalSale
+        Map<String, Double> returned = isOriginalSale
                 ? getAlreadyReturnedQuantities(newOrder.getOrderId())
                 : Map.of();
 
@@ -289,13 +323,13 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderResponse.OrderItemResponse convertToItemResponse(OrderItemEntity orderItemEntity,
-                                                                  Map<String, Integer> alreadyReturned,
+                                                                  Map<String, Double> alreadyReturned,
                                                                   boolean isOriginalSale) {
-        int qty = orderItemEntity.getQuantity() != null ? orderItemEntity.getQuantity() : 0;
-        Integer refunded = null;
-        Integer returnable = null;
+        double qty = orderItemEntity.getQuantity() != null ? orderItemEntity.getQuantity() : 0.0;
+        Double refunded = null;
+        Double returnable = null;
         if (isOriginalSale) {
-            refunded = alreadyReturned.getOrDefault(orderItemEntity.getItemId(), 0);
+            refunded = alreadyReturned.getOrDefault(orderItemEntity.getItemId(), 0.0);
             returnable = Math.max(0, qty - refunded);
         }
         return OrderResponse.OrderItemResponse.builder()
@@ -339,7 +373,7 @@ public class OrderServiceImpl implements OrderService {
                     inventoryService.processReturnTransaction(
                             item.getItemId(),
                             item.getBarcode(),
-                            item.getQuantity(),
+                            (int) Math.max(1, Math.round(item.getQuantity())),
                             "ABORT-" + orderId);
                 } catch (Exception ex) {
                     System.out.println("Abort restock skipped for " + item.getItemId() + ": " + ex.getMessage());
@@ -373,6 +407,12 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public Long countByOrderDate(LocalDate date) {
         return orderEntityRepository.countByOrderDate(date);
+    }
+
+    @Override
+    public Double sumTaxByDate(LocalDate date) {
+        Double tax = orderEntityRepository.sumTaxByDate(date);
+        return tax != null ? tax : 0.0;
     }
 
     @Override
