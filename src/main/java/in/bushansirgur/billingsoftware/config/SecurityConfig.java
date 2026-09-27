@@ -151,21 +151,28 @@ public class SecurityConfig {
     private UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
-        
-        config.addAllowedOriginPattern("http://192.168.80.*:*");
+
+        // Always allow local, shop LAN, and Tailscale CGNAT (100.64.0.0/10)
         config.addAllowedOriginPattern("http://localhost:*");
-        
+        config.addAllowedOriginPattern("http://127.0.0.1:*");
+        config.addAllowedOriginPattern("http://192.168.80.*:*");
+        config.addAllowedOriginPattern("http://100.*:*");
+        config.addAllowedOriginPattern("https://100.*:*");
+
         for (String origin : origins) {
             String trimmed = origin.trim();
-            if (!trimmed.isEmpty()) {
-                if (trimmed.contains("192.168.80")) {
-                    config.addAllowedOriginPattern("http://192.168.80.*:*");
-                } else {
-                    config.addAllowedOriginPattern(trimmed);
-                }
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.contains("192.168.80")) {
+                config.addAllowedOriginPattern("http://192.168.80.*:*");
+            } else if (trimmed.startsWith("http://100.") || trimmed.startsWith("https://100.")) {
+                config.addAllowedOriginPattern(trimmed.contains("https") ? "https://100.*:*" : "http://100.*:*");
+            } else {
+                config.addAllowedOriginPattern(trimmed);
             }
         }
-        
+
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));
