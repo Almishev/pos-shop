@@ -39,6 +39,7 @@ docker-compose up backend
 | `BACKUP_RETENTION_DAYS` | `30` | Delete local backups older than N days |
 | `BACKUP_SCHEDULE_ENABLED` | `true` | Nightly backup at 03:00 + startup catch-up |
 | `BACKUP_HOST_PATH` | (compose only) | Host path for USB/external disk mount |
+| `BACKUP_ENV_FILE` | (empty) / `/app/backup-include/.env` in Docker | Shop `.env` copied to backup dir as `pos-client.env` |
 
 ### API Endpoints
 

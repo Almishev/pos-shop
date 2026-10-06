@@ -89,6 +89,10 @@ public class BackupServiceImpl implements BackupService {
     @Value("${backup.schedule.hour:3}")
     private int scheduleHour;
 
+    /** Optional path to shop .env to copy beside dumps (disaster recovery). */
+    @Value("${backup.envFile:}")
+    private String envFilePath;
+
     @Override
     public String createBackup(ArchiveDestination destination) {
         if (!backupEnabled) {
@@ -124,6 +128,7 @@ public class BackupServiceImpl implements BackupService {
                             RequestBody.fromBytes(bytes));
                     log.info("Database backup uploaded to s3://{}/{}", s3Bucket, key);
                     // Keep local copy as well for download list / USB copy
+                    copyEnvFileSnapshot(base);
                     pruneOldLocalBackups();
                     return "s3://" + s3Bucket + "/" + key;
                 } catch (Exception e) {
@@ -133,6 +138,7 @@ public class BackupServiceImpl implements BackupService {
             }
 
             log.info("Database backup written to {}", gzPath);
+            copyEnvFileSnapshot(base);
             pruneOldLocalBackups();
             return gzPath.toString();
         } catch (IllegalStateException e) {
@@ -149,6 +155,27 @@ public class BackupServiceImpl implements BackupService {
         }
     }
 
+    /**
+     * Copies the shop .env next to DB dumps (fixed name) for disaster recovery on a new server.
+     * Missing/unreadable file is logged and ignored so backup still succeeds.
+     */
+    private void copyEnvFileSnapshot(Path backupDir) {
+        if (envFilePath == null || envFilePath.isBlank()) {
+            return;
+        }
+        Path source = Path.of(envFilePath.trim()).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(source)) {
+            log.warn("backup.envFile is set but not a readable file: {}", source);
+            return;
+        }
+        Path target = backupDir.resolve("pos-client.env");
+        try {
+            Files.copy(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            log.info("Copied env snapshot to {}", target);
+        } catch (IOException e) {
+            log.warn("Failed to copy env file to backup dir: {}", e.getMessage());
+        }
+    }
     @Override
     public List<BackupFileInfo> listLocalBackups() {
         Path base = Path.of(localDir).toAbsolutePath().normalize();
