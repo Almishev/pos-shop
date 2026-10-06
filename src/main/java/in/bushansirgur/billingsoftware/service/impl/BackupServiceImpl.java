@@ -70,7 +70,7 @@ public class BackupServiceImpl implements BackupService {
     @Value("${backup.localDir:./archives/db-backups}")
     private String localDir;
 
-    @Value("${backup.retentionDays:7}")
+    @Value("${backup.retentionDays:30}")
     private int retentionDays;
 
     @Value("${backup.s3.bucket:pos-reports-supermarket}")

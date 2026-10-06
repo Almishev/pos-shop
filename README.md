@@ -35,6 +35,10 @@ docker-compose up backend
 | `SPRING_DATASOURCE_PASSWORD` | `asroma` | Database password |
 | `SERVER_PORT` | `8087` | Application port |
 | `JWT_SECRET_KEY` | `thisismysecretkeyfortheupcomingproject` | JWT secret |
+| `BACKUP_LOCAL_DIR` | `E:/shop-backups` (local) / `/app/archives/db-backups` (Docker) | Local dump directory |
+| `BACKUP_RETENTION_DAYS` | `30` | Delete local backups older than N days |
+| `BACKUP_SCHEDULE_ENABLED` | `true` | Nightly backup at 03:00 + startup catch-up |
+| `BACKUP_HOST_PATH` | (compose only) | Host path for USB/external disk mount |
 
 ### API Endpoints
 
@@ -43,6 +47,21 @@ docker-compose up backend
 - **Categories:** `GET /api/v1.0/categories`
 - **Items:** `GET /api/v1.0/items`
 - **Orders:** `POST /api/v1.0/orders`
+- **DB backup (ADMIN):** `POST /api/v1.0/admin/backup?destination=local\|s3`
+- **List backups (ADMIN):** `GET /api/v1.0/admin/backup`
+- **Download backup (ADMIN):** `GET /api/v1.0/admin/backup/{filename}`
+
+## 💾 Database backup
+
+Creates a full `pg_dump` → `.sql.gz`. Does **not** delete PostgreSQL data. Requires `pg_dump` on the host PATH (local) or `postgresql-client` in the Docker image.
+
+- UI: **Reports → Database backup** (local / AWS)
+- Schedule: every day at **03:00**; catch-up on startup if the nightly run was missed
+- Retention: **30 days**
+- Docker: set `BACKUP_HOST_PATH` to the USB/external disk folder; compose mounts it into the container
+- Restore: stop the app → empty `billing_app` → `psql -f backup.sql` (or gunzip pipe) → start the app. Never start Spring on an empty DB before restore (`ddl-auto` would create empty tables and break the dump).
+
+See also [CLIENT/README.CLIENT.md](../CLIENT/README.CLIENT.md) (operator restore steps).
 
 ### Development
 

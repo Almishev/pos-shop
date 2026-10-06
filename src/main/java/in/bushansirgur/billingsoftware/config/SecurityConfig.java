@@ -16,6 +16,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -83,20 +84,20 @@ public class SecurityConfig {
                     .requestMatchers("/admin/labels/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/admin/promotions/**").hasAnyRole("USER", "ADMIN")
 
-                    // Admin-only management
+                    // Admin-only management (Ant matchers avoid MVC introspection 403 on POST)
                     .requestMatchers(HttpMethod.POST, "/admin/register").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/admin/items", "/admin/items/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.PUT, "/admin/items", "/admin/items/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.DELETE, "/admin/items", "/admin/items/**").hasRole("ADMIN")
                     .requestMatchers(
-                            "/admin/users/**",
-                            "/admin/categories/**",
-                            "/admin/inventory/**",
-                            "/admin/import/**",
-                            "/admin/backup",
-                            "/admin/backup/**"
+                            AntPathRequestMatcher.antMatcher("/admin/users/**"),
+                            AntPathRequestMatcher.antMatcher("/admin/categories/**"),
+                            AntPathRequestMatcher.antMatcher("/admin/inventory/**"),
+                            AntPathRequestMatcher.antMatcher("/admin/import/**"),
+                            AntPathRequestMatcher.antMatcher("/admin/backup"),
+                            AntPathRequestMatcher.antMatcher("/admin/backup/**")
                     ).hasRole("ADMIN")
-                    .requestMatchers("/reports/**").hasRole("ADMIN")
+                    .requestMatchers(AntPathRequestMatcher.antMatcher("/reports/**")).hasRole("ADMIN")
                     .requestMatchers("/dashboard", "/dashboard/**").hasRole("ADMIN")
                     .requestMatchers("/license/status").hasRole("ADMIN")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
