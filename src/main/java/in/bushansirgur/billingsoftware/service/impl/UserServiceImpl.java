@@ -23,9 +23,36 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponse createUser(UserRequest request) {
+        String rawPassword = request.getPassword() == null ? "" : request.getPassword().trim();
+        if (!rawPassword.matches("\\d{4,12}")) {
+            throw new IllegalArgumentException("Password must be 4–12 digits only");
+        }
+        boolean pinTaken = userRepository.findAll().stream()
+                .anyMatch(u -> passwordEncoder.matches(rawPassword, u.getPassword()));
+        if (pinTaken) {
+            throw new IllegalArgumentException("This PIN is already used by another user");
+        }
         UserEntity newUser = convertToEntity(request);
         newUser = userRepository.save(newUser);
         return convertToResponse(newUser);
+    }
+
+    @Override
+    public String findEmailByPin(String pin) {
+        String rawPin = pin == null ? "" : pin.trim();
+        if (!rawPin.matches("\\d{4,12}")) {
+            throw new IllegalArgumentException("PIN must be 4–12 digits");
+        }
+        List<UserEntity> matches = userRepository.findAll().stream()
+                .filter(u -> passwordEncoder.matches(rawPin, u.getPassword()))
+                .collect(Collectors.toList());
+        if (matches.isEmpty()) {
+            throw new UsernameNotFoundException("No user for PIN");
+        }
+        if (matches.size() > 1) {
+            throw new IllegalStateException("PIN matches multiple users");
+        }
+        return matches.get(0).getEmail();
     }
 
     private UserResponse convertToResponse(UserEntity newUser) {

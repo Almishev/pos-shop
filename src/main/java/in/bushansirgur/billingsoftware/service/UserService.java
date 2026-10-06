@@ -11,6 +11,9 @@ public interface UserService {
 
     String getUserRole(String email);
 
+    /** Resolve login email from digit PIN (unique match required). */
+    String findEmailByPin(String pin);
+
     List<UserResponse> readUsers();
 
     void deleteUser(String id);
