@@ -35,19 +35,9 @@ public interface FiscalReportService {
     
     List<FiscalReportResponse> getReportsByDevice(String deviceSerialNumber);
     
-    boolean sendReportToNAF(Long reportId);
-    
-    boolean sendReportToNAF(String reportNumber);
-    
     // Reset data after reports
     void resetDataAfterShiftReport(String cashierUsername, LocalDate date);
     void resetDataAfterStoreDailyReport(LocalDate date);
-    
-    // Send to NAP
-    // NOTE: In real systems, fiscal devices automatically send Z-reports to NAP.
-    // These methods are for tracking/logging purposes or manual submission scenarios.
-    boolean sendStoreDailyReportToNAP(Long reportId);
-    boolean sendShiftReportToNAP(Long reportId);
     
     // Export to XML (optional feature for archiving, backup, or manual submission)
     // NOTE: Fiscal devices automatically send data to NAP. XML export is supplementary.

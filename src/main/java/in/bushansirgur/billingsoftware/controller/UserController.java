@@ -28,6 +28,15 @@ public class UserController {
         }
     }
 
+    @PutMapping("/users/{id}")
+    public UserResponse updateUser(@PathVariable String id, @RequestBody UserRequest request) {
+        try {
+            return userService.updateUser(id, request);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unable to update user " + e.getMessage());
+        }
+    }
+
     @GetMapping("/users")
     public List<UserResponse> readUsers() {
         return userService.readUsers();

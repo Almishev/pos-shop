@@ -37,7 +37,10 @@ public class FiscalReceiptEntity {
     
     private String qrCode; 
     
-    private String fiscalUrl; 
+    private String fiscalUrl;
+
+    /** Fiscal memory number returned by the device. Needed for a later storno. */
+    private String fiscalMemorySerialNumber; 
     
     @Enumerated(EnumType.STRING)
     private FiscalStatus status; 
@@ -46,7 +49,9 @@ public class FiscalReceiptEntity {
     
     @PrePersist
     protected void onCreate() {
-        this.fiscalDateTime = LocalDateTime.now();
+        if (this.fiscalDateTime == null) {
+            this.fiscalDateTime = LocalDateTime.now();
+        }
         if (this.status == null) {
             this.status = FiscalStatus.PENDING;
         }

@@ -58,6 +58,20 @@ public class OrderEntity {
     // Username of the cashier who created the order
     private String cashierUsername;
 
+    /** Ordinance H-18 unique sale number: device-operator-sequence. */
+    @Column(length = 21)
+    private String uniqueSaleNumber;
+
+    @Column(length = 4)
+    private String operatorCode;
+
+    @Column(length = 8)
+    private String fiscalIndividualNumber;
+
+    private LocalDateTime openedAt;
+    private LocalDateTime closedAt;
+    private LocalDateTime voidedAt;
+
     @PrePersist
     protected void onCreate() {
         this.orderId = "ORD"+System.currentTimeMillis();

@@ -19,4 +19,6 @@ public interface FiscalDeviceRepository extends JpaRepository<FiscalDeviceEntity
     List<FiscalDeviceEntity> findByLocation(String location);
     
     Optional<FiscalDeviceEntity> findByFiscalMemoryNumber(String fiscalMemoryNumber);
+
+    Optional<FiscalDeviceEntity> findByIndividualNumber(String individualNumber);
 }

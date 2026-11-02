@@ -45,7 +45,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/login", "/health").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/logout").authenticated()
                     .requestMatchers("/uploads/**").permitAll()
+
+                    .requestMatchers(HttpMethod.GET, "/audit", "/audit/**").hasAnyRole("ADMIN", "AUDITOR")
+                    .requestMatchers(HttpMethod.GET, "/reports/annex29", "/reports/annex29/**").hasAnyRole("ADMIN", "AUDITOR")
 
                     // Cash drawer — cashiers operate the till; admin only force-end / listing
                     .requestMatchers("/cash-drawer/force-end/**").hasRole("ADMIN")
@@ -62,7 +66,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.PUT, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.DELETE, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasRole("ADMIN")
-                    .requestMatchers(HttpMethod.GET, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/admin/fiscal-devices", "/admin/fiscal-devices/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
                     .requestMatchers(HttpMethod.GET, "/admin/devices/*/status", "/admin/devices/*/ready").hasAnyRole("USER", "ADMIN")
                     .requestMatchers(HttpMethod.POST, "/admin/devices/*/x-report", "/admin/devices/*/z-report").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/admin/devices/**").hasRole("ADMIN")
@@ -78,6 +82,7 @@ public class SecurityConfig {
                             "/admin/fiscal-reports/yearly"
                     ).hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/admin/fiscal-reports/shift", "/admin/fiscal-reports/z-report").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
                     .requestMatchers("/admin/fiscal-reports", "/admin/fiscal-reports/**").hasAnyRole("USER", "ADMIN")
 
                     // Labels & promotions — authenticated (not public)
@@ -97,9 +102,11 @@ public class SecurityConfig {
                             AntPathRequestMatcher.antMatcher("/admin/backup"),
                             AntPathRequestMatcher.antMatcher("/admin/backup/**")
                     ).hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/reports/**").hasAnyRole("ADMIN", "AUDITOR")
                     .requestMatchers(AntPathRequestMatcher.antMatcher("/reports/**")).hasRole("ADMIN")
                     .requestMatchers("/dashboard", "/dashboard/**").hasRole("ADMIN")
                     .requestMatchers("/license/status").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/inventory/deliveries", "/inventory/deliveries/**").hasAnyRole("ADMIN", "AUDITOR")
                     .requestMatchers("/inventory/auto/**").hasAnyRole("USER", "ADMIN")
                     .requestMatchers("/inventory", "/inventory/**").hasRole("ADMIN")
 
@@ -108,9 +115,11 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/orders/archive/**").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/orders/*/refund").hasAnyRole("USER", "ADMIN")
                     .requestMatchers(HttpMethod.POST, "/orders").hasAnyRole("USER", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/orders", "/orders/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
                     .requestMatchers("/orders", "/orders/**").hasAnyRole("USER", "ADMIN")
 
                     // Catalog & loyalty
+                    .requestMatchers(HttpMethod.GET, "/categories", "/category", "/items", "/items/**").hasAnyRole("USER", "ADMIN", "AUDITOR")
                     .requestMatchers(
                             "/categories",
                             "/category",

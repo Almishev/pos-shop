@@ -39,6 +39,9 @@ class CategoryServiceTest {
     private ItemRepository itemRepository;
 
     @Mock
+    private in.bushansirgur.billingsoftware.service.AuditService auditService;
+
+    @Mock
     private MultipartFile multipartFile;
 
     @InjectMocks

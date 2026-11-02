@@ -2,12 +2,17 @@ package in.bushansirgur.billingsoftware.service.impl;
 
 import in.bushansirgur.billingsoftware.entity.OrderEntity;
 import in.bushansirgur.billingsoftware.entity.OrderItemEntity;
+import in.bushansirgur.billingsoftware.io.AuditAction;
 import in.bushansirgur.billingsoftware.io.*;
 import in.bushansirgur.billingsoftware.repository.OrderEntityRepository;
+import in.bushansirgur.billingsoftware.service.AuditService;
 import in.bushansirgur.billingsoftware.service.CashDrawerSessionService;
+import in.bushansirgur.billingsoftware.service.FiscalDeviceService;
 import in.bushansirgur.billingsoftware.service.InventoryService;
 import in.bushansirgur.billingsoftware.service.OrderService;
 import in.bushansirgur.billingsoftware.service.PosPaymentService;
+import in.bushansirgur.billingsoftware.service.SaleNumberService;
+import in.bushansirgur.billingsoftware.service.UserService;
 import in.bushansirgur.billingsoftware.io.PosPaymentIO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,6 +42,10 @@ public class OrderServiceImpl implements OrderService {
     private final InventoryService inventoryService;
     private final PosPaymentService posPaymentService;
     private final CashDrawerSessionService cashDrawerSessionService;
+    private final FiscalDeviceService fiscalDeviceService;
+    private final SaleNumberService saleNumberService;
+    private final UserService userService;
+    private final AuditService auditService;
 
     @Override
     @Transactional
@@ -47,8 +56,9 @@ public class OrderServiceImpl implements OrderService {
         }
         String cashierUsername = auth.getName();
 
+        CashDrawerSessionResponse session;
         try {
-            cashDrawerSessionService.getActiveSession(cashierUsername, LocalDate.now());
+            session = cashDrawerSessionService.getActiveSession(cashierUsername, LocalDate.now());
         } catch (ResponseStatusException ex) {
             if (ex.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
                 throw new ResponseStatusException(HttpStatus.PRECONDITION_FAILED,
@@ -56,6 +66,15 @@ public class OrderServiceImpl implements OrderService {
             }
             throw ex;
         }
+        if (session.getDeviceSerialNumber() == null || session.getDeviceSerialNumber().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.PRECONDITION_FAILED,
+                    "Активната касова сесия няма фискално устройство.");
+        }
+
+        String operatorCode = userService.ensureOperatorCode(cashierUsername);
+        String individualNumber = fiscalDeviceService.requireIndividualNumber(session.getDeviceSerialNumber());
+        String uniqueSaleNumber = saleNumberService.next(individualNumber, operatorCode);
+        LocalDateTime now = LocalDateTime.now();
 
         OrderEntity newOrder = convertToOrderEntity(request);
 
@@ -98,6 +117,11 @@ public class OrderServiceImpl implements OrderService {
 
         newOrder.setItems(orderItems);
         newOrder.setCashierUsername(cashierUsername);
+        newOrder.setUniqueSaleNumber(uniqueSaleNumber);
+        newOrder.setOperatorCode(operatorCode);
+        newOrder.setFiscalIndividualNumber(individualNumber);
+        newOrder.setOpenedAt(now);
+        newOrder.setClosedAt(now);
         
         newOrder = orderEntityRepository.save(newOrder);
 
@@ -183,6 +207,8 @@ public class OrderServiceImpl implements OrderService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nothing left to return on this order");
         }
 
+        fiscalDeviceService.printReversalReceipt(original, refundItems);
+
         // Item prices are VAT-inclusive (same as sale grandTotal). Tax on the refund
         // record is the proportional VAT share for fiscal reporting only — not added again.
         double refundTax = 0.0;
@@ -261,9 +287,17 @@ public class OrderServiceImpl implements OrderService {
                 .status(OrderStatus.REFUNDED)
                 .originalOrderId(original.getOrderId())
                 .cashierUsername(cashier)
+                .uniqueSaleNumber(original.getUniqueSaleNumber())
+                .operatorCode(original.getOperatorCode())
+                .fiscalIndividualNumber(original.getFiscalIndividualNumber())
+                .openedAt(LocalDateTime.now())
+                .closedAt(LocalDateTime.now())
                 .build();
         refund.setItems(refundItems);
         refund = orderEntityRepository.save(refund);
+        auditService.record(AuditAction.STORNO,
+                "Сторно на продажба " + original.getOrderId(),
+                original.getUniqueSaleNumber());
         return convertToResponse(refund);
     }
 
@@ -313,6 +347,12 @@ public class OrderServiceImpl implements OrderService {
                 .cashierUsername(newOrder.getCashierUsername())
                 .orderStatus(newOrder.getStatus())
                 .originalOrderId(newOrder.getOriginalOrderId())
+                .uniqueSaleNumber(newOrder.getUniqueSaleNumber())
+                .operatorCode(newOrder.getOperatorCode())
+                .fiscalIndividualNumber(newOrder.getFiscalIndividualNumber())
+                .openedAt(newOrder.getOpenedAt())
+                .closedAt(newOrder.getClosedAt())
+                .voidedAt(newOrder.getVoidedAt())
                 .items(newOrder.getItems().stream()
                         .map(oi -> convertToItemResponse(oi, returned, isOriginalSale))
                         .collect(Collectors.toList()))
@@ -359,14 +399,19 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public void deleteOrder(String orderId) {
         OrderEntity existingOrder = orderEntityRepository.findByOrderId(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
 
-        // Restock sale lines when aborting an uncompleted sale (e.g. fiscal/payment failure)
-        if (existingOrder.getOriginalOrderId() == null
-                && existingOrder.getItems() != null
-                && existingOrder.getStatus() != OrderStatus.REFUNDED
-                && existingOrder.getStatus() != OrderStatus.PARTIALLY_REFUNDED
-                && existingOrder.getStatus() != OrderStatus.VOIDED) {
+        if (existingOrder.getStatus() == OrderStatus.VOIDED) {
+            return;
+        }
+        if (existingOrder.getOriginalOrderId() != null
+                || existingOrder.getStatus() == OrderStatus.REFUNDED
+                || existingOrder.getStatus() == OrderStatus.PARTIALLY_REFUNDED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Приключена или сторнирана продажба не се изтрива");
+        }
+
+        if (existingOrder.getItems() != null) {
             for (OrderItemEntity item : existingOrder.getItems()) {
                 if (item.getItemId() == null || item.getQuantity() == null || item.getQuantity() <= 0) continue;
                 try {
@@ -381,7 +426,12 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        orderEntityRepository.delete(existingOrder);
+        existingOrder.setStatus(OrderStatus.VOIDED);
+        existingOrder.setVoidedAt(LocalDateTime.now());
+        orderEntityRepository.save(existingOrder);
+        auditService.record(AuditAction.VOID,
+                "Анулиране на продажба " + orderId,
+                existingOrder.getUniqueSaleNumber());
     }
 
     @Override

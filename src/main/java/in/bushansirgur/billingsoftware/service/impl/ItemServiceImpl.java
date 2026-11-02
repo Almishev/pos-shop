@@ -2,6 +2,7 @@ package in.bushansirgur.billingsoftware.service.impl;
 
 import in.bushansirgur.billingsoftware.entity.CategoryEntity;
 import in.bushansirgur.billingsoftware.entity.ItemEntity;
+import in.bushansirgur.billingsoftware.io.AuditAction;
 import in.bushansirgur.billingsoftware.io.ItemRequest;
 import in.bushansirgur.billingsoftware.io.ItemResponse;
 import in.bushansirgur.billingsoftware.repository.CategoryRepository;
@@ -12,6 +13,7 @@ import in.bushansirgur.billingsoftware.repository.ItemRepository;
 import in.bushansirgur.billingsoftware.repository.ItemSpecifications;
 import in.bushansirgur.billingsoftware.repository.PromotionRepository;
 import in.bushansirgur.billingsoftware.repository.StockMovementRepository;
+import in.bushansirgur.billingsoftware.service.AuditService;
 import in.bushansirgur.billingsoftware.service.ItemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -40,8 +42,10 @@ public class ItemServiceImpl implements ItemService {
     private final InventoryAdjustmentRepository inventoryAdjustmentRepository;
     private final PromotionRepository promotionRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final AuditService auditService;
 
     @Override
+    @Transactional
     public ItemResponse add(ItemRequest request, MultipartFile file) throws IOException {
         // Check if barcode already exists
         if (request.getBarcode() != null && !request.getBarcode().trim().isEmpty()) {
@@ -57,6 +61,8 @@ public class ItemServiceImpl implements ItemService {
         newItem.setCategory(existingCategory);
         newItem.setImgUrl(null);
         newItem = itemRepository.save(newItem);
+        auditService.record(AuditAction.NOMENCLATURE_CHANGE,
+                "Нова стока " + newItem.getItemId() + ": " + itemSnapshot(newItem), null);
         return convertToResponse(newItem);
     }
 
@@ -219,9 +225,11 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
+    @Transactional
     public ItemResponse update(String itemId, ItemRequest request, MultipartFile file) throws IOException {
         ItemEntity existingItem = itemRepository.findByItemId(itemId)
                 .orElseThrow(() -> new RuntimeException("Item not found: " + itemId));
+        String before = itemSnapshot(existingItem);
 
         // Update basic fields
         existingItem.setName(request.getName());
@@ -246,6 +254,8 @@ public class ItemServiceImpl implements ItemService {
         existingItem.setImgUrl(null);
 
         ItemEntity updatedItem = itemRepository.save(existingItem);
+        auditService.record(AuditAction.NOMENCLATURE_CHANGE,
+                "Промяна на стока " + itemId + ": " + before + " → " + itemSnapshot(updatedItem), null);
         return convertToResponse(updatedItem);
     }
 
@@ -284,6 +294,7 @@ public class ItemServiceImpl implements ItemService {
     public void deleteItem(String itemId) {
         ItemEntity existingItem = itemRepository.findByItemId(itemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Item not found: " + itemId));
+        String before = itemSnapshot(existingItem);
 
         // Remove dependent records before deleting the item
         inventoryTransactionRepository.deleteByItemId(itemId);
@@ -295,10 +306,19 @@ public class ItemServiceImpl implements ItemService {
         try {
             itemRepository.delete(existingItem);
             itemRepository.flush();
+            auditService.record(AuditAction.NOMENCLATURE_CHANGE, "Изтрита стока " + itemId + ": " + before, null);
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Не може да се изтрие продуктът, защото се ползва в други записи (поръчки, доставки и т.н.).",
                     ex);
         }
+    }
+
+    private String itemSnapshot(ItemEntity item) {
+        String category = item.getCategory() == null ? "" : item.getCategory().getName();
+        return "име=" + item.getName()
+                + ", цена=" + item.getPrice()
+                + ", ДДС=" + item.getVatRate()
+                + ", категория=" + category;
     }
 }

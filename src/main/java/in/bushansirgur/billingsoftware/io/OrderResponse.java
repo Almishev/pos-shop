@@ -26,6 +26,12 @@ public class OrderResponse {
     private String cashierUsername;
     private OrderStatus orderStatus;
     private String originalOrderId;
+    private String uniqueSaleNumber;
+    private String operatorCode;
+    private String fiscalIndividualNumber;
+    private LocalDateTime openedAt;
+    private LocalDateTime closedAt;
+    private LocalDateTime voidedAt;
 
     @Data
     @AllArgsConstructor

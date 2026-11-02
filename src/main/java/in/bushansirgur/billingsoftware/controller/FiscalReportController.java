@@ -136,17 +136,6 @@ public class FiscalReportController {
         return ResponseEntity.ok(fiscalReportService.getReportsByDevice(deviceSerialNumber));
     }
     
-    // Изпращане към НАП
-    @PostMapping("/{reportId}/send-to-naf")
-    public ResponseEntity<Boolean> sendReportToNAF(@PathVariable Long reportId) {
-        return ResponseEntity.ok(fiscalReportService.sendReportToNAF(reportId));
-    }
-    
-    @PostMapping("/number/{reportNumber}/send-to-naf")
-    public ResponseEntity<Boolean> sendReportToNAFByNumber(@PathVariable String reportNumber) {
-        return ResponseEntity.ok(fiscalReportService.sendReportToNAF(reportNumber));
-    }
-    
     // Export to XML (optional feature for archiving/backup)
     // NOTE: In real systems, fiscal devices automatically send Z-reports to NAP via internet.
     // This XML export is supplementary for archiving, backup, or manual submission scenarios.

@@ -21,6 +21,10 @@ public class FiscalDeviceEntity {
     
     @Column(unique = true)
     private String serialNumber;
+
+    /** 8-digit individual number assigned by the fiscal device manufacturer (УНП). */
+    @Column(unique = true, length = 8)
+    private String individualNumber;
     
     private String manufacturer;
     

@@ -1,15 +1,18 @@
 package in.bushansirgur.billingsoftware.service.impl;
 
 import in.bushansirgur.billingsoftware.entity.CategoryEntity;
+import in.bushansirgur.billingsoftware.io.AuditAction;
 import in.bushansirgur.billingsoftware.io.CategoryRequest;
 import in.bushansirgur.billingsoftware.io.CategoryResponse;
 import in.bushansirgur.billingsoftware.repository.CategoryRepository;
 import in.bushansirgur.billingsoftware.repository.ItemRepository;
+import in.bushansirgur.billingsoftware.service.AuditService;
 import in.bushansirgur.billingsoftware.service.CategoryService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -24,23 +27,32 @@ public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final ItemRepository itemRepository;
+    private final AuditService auditService;
 
+    @Transactional
     public CategoryResponse add(CategoryRequest request, MultipartFile file) throws IOException {
         CategoryEntity newCategory = convertToEntity(request);
         newCategory.setImgUrl(null);
         newCategory = categoryRepository.save(newCategory);
+        auditService.record(AuditAction.NOMENCLATURE_CHANGE,
+                "Нова категория " + newCategory.getCategoryId() + ": " + newCategory.getName(), null);
         return convertToResponse(newCategory);
     }
 
     @Override
+    @Transactional
     public CategoryResponse update(String categoryId, CategoryRequest request, MultipartFile file) throws IOException {
         CategoryEntity existing = categoryRepository.findByCategoryId(categoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found: " + categoryId));
+        String before = existing.getName();
         existing.setName(request.getName());
         existing.setDescription(request.getDescription());
         existing.setBgColor(request.getBgColor());
         existing.setImgUrl(null);
-        return convertToResponse(categoryRepository.save(existing));
+        CategoryEntity saved = categoryRepository.save(existing);
+        auditService.record(AuditAction.NOMENCLATURE_CHANGE,
+                "Промяна на категория " + categoryId + ": " + before + " → " + saved.getName(), null);
+        return convertToResponse(saved);
     }
 
     @Override
@@ -52,6 +64,7 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     @Override
+    @Transactional
     public void delete(String categoryId) {
         CategoryEntity existingCategory = categoryRepository.findByCategoryId(categoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found: " + categoryId));
@@ -61,6 +74,8 @@ public class CategoryServiceImpl implements CategoryService {
                     "Cannot delete category with existing items (" + itemsCount + ")");
         }
         categoryRepository.delete(existingCategory);
+        auditService.record(AuditAction.NOMENCLATURE_CHANGE,
+                "Изтрита категория " + categoryId + ": " + existingCategory.getName(), null);
     }
 
     private CategoryResponse convertToResponse(CategoryEntity newCategory) {

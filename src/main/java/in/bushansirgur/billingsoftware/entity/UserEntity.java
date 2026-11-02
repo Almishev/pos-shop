@@ -9,6 +9,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "tbl_users")
@@ -27,6 +28,17 @@ public class UserEntity {
     private String password;
     private String role;
     private String name;
+    /** 4-digit operator code used in the unique sale number (УНП). */
+    @Column(unique = true, length = 4)
+    private String operatorCode;
+    private String firstName;
+    private String middleName;
+    private String lastName;
+    private String position;
+    /** Start of the current role assignment. */
+    private LocalDateTime roleActiveFrom;
+    /** End of the current role assignment. Empty while the role is active. */
+    private LocalDateTime roleActiveTo;
     @CreationTimestamp
     @Column(updatable = false)
     private Timestamp createdAt;

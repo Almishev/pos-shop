@@ -1,7 +1,9 @@
 package in.bushansirgur.billingsoftware.controller;
 
+import in.bushansirgur.billingsoftware.io.AuditAction;
 import in.bushansirgur.billingsoftware.io.AuthRequest;
 import in.bushansirgur.billingsoftware.io.AuthResponse;
+import in.bushansirgur.billingsoftware.service.AuditService;
 import in.bushansirgur.billingsoftware.service.LicenseService;
 import in.bushansirgur.billingsoftware.service.UserService;
 import in.bushansirgur.billingsoftware.service.impl.AppUserDetailsService;
@@ -16,6 +18,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -28,14 +31,14 @@ public class AuthController {
     private final UserService userService;
     private final JwtUtil jwtUtil;
     private final LicenseService licenseService;
+    private final AuditService auditService;
 
     @PostMapping({"/login", "/api/v1.0/login"})
     public AuthResponse login(@RequestBody AuthRequest request) throws Exception {
         licenseService.assertLicenseActive();
         String email = resolveEmail(request);
         authenticate(email, request.getPassword());
-        final UserDetails userDetails = appUserDetailsService.loadUserByUsername(email);
-        final String jwtToken = jwtUtil.generateToken(userDetails);
+        userService.ensureOperatorCode(email);
         String role = userService.getUserRole(email);
         String name = userService.readUsers()
                 .stream()
@@ -43,7 +46,16 @@ public class AuthController {
                 .findFirst()
                 .map(u -> u.getName())
                 .orElse(email);
+        auditService.recordFor(email, AuditAction.LOGIN, "Вход в системата", null);
+        final UserDetails userDetails = appUserDetailsService.loadUserByUsername(email);
+        final String jwtToken = jwtUtil.generateToken(userDetails);
         return new AuthResponse(email, name, jwtToken, role);
+    }
+
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout() {
+        auditService.record(AuditAction.LOGOUT, "Изход от системата", null);
     }
 
     private String resolveEmail(AuthRequest request) {

@@ -608,14 +608,6 @@ public class FiscalReportServiceImpl implements FiscalReportService {
         log.info("Store Daily Report generated: {} - Total Receipts: {}, Total Sales: {}, Total VAT: {}", 
                 report.getReportNumber(), report.getTotalReceipts(), report.getTotalSales(), report.getTotalVAT());
         
-        // Изпращаме отчета към НАП чрез главното фискално устройство
-        boolean sentToNAP = sendStoreDailyReportToNAP(report.getId());
-        if (sentToNAP) {
-            log.info("Store daily report successfully sent to NAP");
-        } else {
-            log.warn("Failed to send store daily report to NAP");
-        }
-        
         // ВАЖНО: Не нулираме данните автоматично след генериране на отчет
         // Това позволява на магазина да генерира допълнителни отчети ако има допълнителни продажби
         // Управителят може ръчно да нулира данните чрез опция за край на работния ден
@@ -861,34 +853,6 @@ public class FiscalReportServiceImpl implements FiscalReportService {
                 .collect(Collectors.toList());
     }
     
-    @Override
-    public boolean sendReportToNAF(Long reportId) {
-        FiscalReportEntity report = fiscalReportRepository.findById(reportId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
-                        "Report not found with id: " + reportId));
-        
-        // Симулация на изпращане към НАП
-        report.setStatus(FiscalReportEntity.ReportStatus.SENT_TO_NAF);
-        fiscalReportRepository.save(report);
-        
-        log.info("Report sent to NAF: {}", report.getReportNumber());
-        return true;
-    }
-    
-    @Override
-    public boolean sendReportToNAF(String reportNumber) {
-        FiscalReportEntity report = fiscalReportRepository.findByReportNumber(reportNumber)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
-                        "Report not found with number: " + reportNumber));
-        
-        // Симулация на изпращане към НАП
-        report.setStatus(FiscalReportEntity.ReportStatus.SENT_TO_NAF);
-        fiscalReportRepository.save(report);
-        
-        log.info("Report sent to NAF: {}", report.getReportNumber());
-        return true;
-    }
-    
     // Помощен метод за генериране на номер на отчет
     private String generateReportNumber(FiscalReportEntity.ReportType reportType, LocalDate date) {
         String typePrefix = switch (reportType) {
@@ -1128,76 +1092,6 @@ public class FiscalReportServiceImpl implements FiscalReportService {
             log.error("Error during store daily report reset: {}", e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
                     "Грешка при нулиране на данните след общ Z-отчет: " + e.getMessage());
-        }
-    }
-    
-    @Override
-    public boolean sendStoreDailyReportToNAP(Long reportId) {
-        log.info("=== SENDING STORE DAILY REPORT TO NAP: {} ===", reportId);
-        
-        try {
-            FiscalReportEntity report = fiscalReportRepository.findById(reportId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
-                            "Report not found with id: " + reportId));
-            
-            if (report.getReportType() != FiscalReportEntity.ReportType.STORE_DAILY) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
-                        "Report is not a store daily report");
-            }
-            
-            // ВАЖНО: В реална система фискалното устройство автоматично изпраща Z-отчета към НАП
-            // чрез интернет връзка. Този метод е за проследяване/логиране или за ръчно изпращане
-            // в специални случаи (напр. ако фискалното устройство не е успело да изпрати).
-            // 
-            // В реална система тук бихме:
-            // 1. Проверили дали фискалното устройство е изпратило автоматично
-            // 2. Ако не - изпратили данните ръчно чрез API на фискалното устройство
-            // 3. Получили потвърждение от НАП
-            // 4. Записали статуса на изпращането
-            
-            log.info("Store daily report {} sent to NAP successfully", report.getReportNumber());
-            log.info("Report details: Date={}, Total Sales={}, Total VAT={}", 
-                    report.getReportDate(), report.getTotalSales(), report.getTotalVAT());
-            
-            return true;
-            
-        } catch (Exception e) {
-            log.error("Error sending store daily report to NAP: {}", e.getMessage(), e);
-            return false;
-        }
-    }
-    
-    @Override
-    public boolean sendShiftReportToNAP(Long reportId) {
-        log.info("=== SENDING SHIFT REPORT TO NAP: {} ===", reportId);
-        
-        try {
-            FiscalReportEntity report = fiscalReportRepository.findById(reportId)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, 
-                            "Report not found with id: " + reportId));
-            
-            if (report.getReportType() != FiscalReportEntity.ReportType.SHIFT) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
-                        "Report is not a shift report");
-            }
-            
-            // ВАЖНО: X-отчетът (сменен отчет) е ВЪТРЕШЕН отчет и НЕ се изпраща към НАП.
-            // Само Z-отчетът (дневен финансов отчет) се изпраща автоматично от фискалното устройство.
-            // Този метод е за проследяване/логиране на вътрешни отчети.
-            //
-            // В реална система:
-            // - X-отчетът се използва само за управление и контрол в магазина
-            // - Z-отчетът се изпраща автоматично от фискалното устройство към НАП
-            
-            log.info("Shift report (X-report) {} logged successfully", report.getReportNumber());
-            log.info("Report details: Cashier={}, Device={}, Total Sales={}", 
-                    report.getCashierName(), report.getDeviceSerialNumber(), report.getTotalSales());
-            
-            return true;
-            
-        } catch (Exception e) {
-            log.error("Error sending shift report to NAP: {}", e.getMessage(), e);
-            return false;
         }
     }
     
